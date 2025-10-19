@@ -42,3 +42,22 @@ export const createTaskController = async (req: Request, res: Response) => {
   });
   res.status(201).json(task);
 };
+
+const updateStatusSchema = Joi.object({
+  status: Joi.string().valid("baru", "proses", "selesai").required(),
+});
+
+export const updateTaskStatusController = async (req: Request, res: Response) => {
+  const { error, value } = updateStatusSchema.validate(req.body);
+  if (error) {
+    res.status(400).json({ message: error.message });
+    return;
+  }
+
+  const task = await service.updateStatus(req.params.id, value.status as TaskStatus);
+  if (!task) {
+    res.status(404).json({ message: "Tugas tidak ditemukan" });
+    return;
+  }
+  res.json(task);
+};

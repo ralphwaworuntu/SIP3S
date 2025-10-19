@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import { join } from "path";
 import { v4 as uuid } from "uuid";
+import type { Express } from "express";
 
 import { PplRepository } from "@/repositories/ppl-repository";
 import type { CreateUploadParams, PplAssignment, PplUploadCategory, PplUploadRecord } from "@/types/ppl";

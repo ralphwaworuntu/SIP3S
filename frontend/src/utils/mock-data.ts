@@ -2,6 +2,7 @@
 import type { LaporanLapangan } from "@/services/report-service";
 import type { PplAssignment, PplUploadRecord } from "@/types/ppl";
 import type {
+  BhabinAccount,
   EscortRequest,
   HarvestVerification,
   PlantConditionReport,

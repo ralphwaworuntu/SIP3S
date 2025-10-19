@@ -13,7 +13,7 @@ const ADMIN_CREDENTIALS: Record<string, { role: UserRole; nama: string; agency?:
   },
   "admin@polres.kupang.gov.id": {
     role: "admin-spesialis",
-    nama: "Admin Spesialis Kupang",
+    nama: "Admin Polres Kupang",
     agency: "Polres Kupang",
   },
 };

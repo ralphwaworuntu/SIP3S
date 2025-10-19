@@ -4,7 +4,7 @@ import { v4 as uuid } from "uuid";
 import { getPool, pingDatabase } from "@/config/database";
 import { logger } from "@/utils/logger";
 import { mockTasks } from "@/repositories/mock-storage";
-import type { Task } from "@/types/task";
+import type { Task, TaskStatus } from "@/types/task";
 
 interface TaskRow extends RowDataPacket {
   id: string;
@@ -67,8 +67,49 @@ export class TaskService {
         logger.error({ err: error }, "Gagal menyimpan tugas ke database");
       }
     } else {
-      mockTasks.unshift(data);
+      const existingIndex = mockTasks.findIndex((item) => item.id === data.id);
+      if (existingIndex !== -1) {
+        mockTasks.splice(existingIndex, 1, data);
+      } else {
+        mockTasks.unshift(data);
+      }
     }
     return data;
+  }
+
+  async updateStatus(id: string, status: TaskStatus): Promise<Task | null> {
+    const useDatabase = await pingDatabase();
+    const updatedAt = new Date().toISOString();
+    if (useDatabase) {
+      try {
+        const pool = getPool();
+        await pool.query("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", [status, updatedAt, id]);
+        const [rows] = await pool.query<TaskRow[]>("SELECT * FROM tasks WHERE id = ? LIMIT 1", [id]);
+        const row = rows.at(0);
+        if (row) {
+          return {
+            id: row.id,
+            region: row.region,
+            dueDate: row.due_date,
+            priority: row.priority as Task["priority"],
+            status: row.status as Task["status"],
+            title: row.title,
+            description: row.description,
+            assignedTo: row.assigned_to.split(","),
+            updatedAt: row.updated_at,
+          };
+        }
+      } catch (error) {
+        logger.error({ err: error }, "Gagal memperbarui status tugas");
+      }
+    }
+
+    const target = mockTasks.find((item) => item.id === id);
+    if (target) {
+      target.status = status;
+      target.updatedAt = updatedAt;
+      return target;
+    }
+    return null;
   }
 }

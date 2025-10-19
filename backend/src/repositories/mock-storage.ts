@@ -21,7 +21,7 @@ export const mockUsers: Record<string, UserAccount> = {
   },
   "admin@polres.kupang.gov.id": {
     id: uuid(),
-    nama: "Admin Spesialis Kupang",
+    nama: "Admin Polres Kupang",
     email: "admin@polres.kupang.gov.id",
     role: "admin-spesialis",
     agency: "Polres Kupang",

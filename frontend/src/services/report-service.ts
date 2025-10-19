@@ -41,9 +41,12 @@ class ReportService {
         id: offlineId,
         payload: offlinePayload,
       });
-      if ("serviceWorker" in navigator && "SyncManager" in window) {
+      if ("serviceWorker" in navigator) {
         const registration = await navigator.serviceWorker.ready;
-        await registration.sync.register(BACKGROUND_SYNC_TAGS.laporan);
+        const syncManager = (registration as ServiceWorkerRegistration & { sync?: { register: (tag: string) => Promise<void> } }).sync;
+        if (syncManager) {
+          await syncManager.register(BACKGROUND_SYNC_TAGS.laporan);
+        }
       }
       return offlinePayload;
     }

@@ -1,0 +1,3 @@
+# Template E-RDKK SIP3S (format CSV, delimiter koma)
+ppl_email,wilayah_id,wilayah_nama,kecamatan,desa_kelurahan,kelompok_tani,subsektor,komoditas,kios_id,nik,nama_petani,rencana_tanam_ha,urea_mt1,urea_mt2,urea_mt3,urea_jumlah,npk_mt1,npk_mt2,npk_mt3,npk_jumlah,npk_formula_mt1,npk_formula_mt2,npk_formula_mt3,npk_formula_jumlah,organik_mt1,organik_mt2,organik_mt3,organik_jumlah,tanggal_rencana
+ppl@distan.ntt.go.id,WIL-OL-001,"Nekamese - Oelomin",Nekamese,Oelomin,Suka Maju,Tanaman Pangan,Jagung,RT000036326,5301166304730002,Aksafina Kenlopo,1.000,100,75,75,250,90,90,90,300,0,0,0,0,0,0,0,0,2025-01-10

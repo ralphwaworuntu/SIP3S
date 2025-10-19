@@ -10,13 +10,15 @@ import { useOnlineStatus } from "@/context/online-status-context";
 import { bhabinService } from "@/services/bhabin-service";
 import type { BhabinAssignment } from "@/types/bhabin";
 
-const navItems = [
+type NavItem = { label: string; to: string; end?: boolean };
+
+const navItems: NavItem[] = [
   { label: "Tugas Lapangan", to: ".", end: true },
   { label: "Verifikasi Penyaluran", to: "verifikasi" },
   { label: "Perkembangan Tanaman", to: "tanaman" },
   { label: "Verifikasi Hasil Panen", to: "panen" },
   { label: "Permintaan Pengawalan", to: "pengawalan" },
-] as const;
+];
 
 const BhabinLayout = () => {
   const { user, logout } = useAuth();

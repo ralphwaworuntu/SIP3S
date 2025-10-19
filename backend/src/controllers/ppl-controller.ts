@@ -1,5 +1,5 @@
 import Joi from "joi";
-import type { Request, Response } from "express";
+import type { Request, Response, Express } from "express";
 
 import { PplUploadService } from "@/services/ppl-upload-service";
 
@@ -18,6 +18,8 @@ const uploadSchema = Joi.object({
   wilayahName: Joi.string().required(),
   notes: Joi.string().allow("", null).optional(),
 });
+
+ type MulterRequest = Request & { file?: Express.Multer.File };
 
 export const listAssignmentsController = async (req: Request, res: Response) => {
   const { error, value } = emailSchema.validate(req.query.email);
@@ -44,7 +46,7 @@ export const listUploadsController = async (req: Request, res: Response) => {
   res.json(uploads);
 };
 
-export const uploadDataController = async (req: Request, res: Response) => {
+export const uploadDataController = async (req: MulterRequest, res: Response) => {
   const { error, value } = uploadSchema.validate(req.body);
   if (error) {
     res.status(400).json({ message: error.message });

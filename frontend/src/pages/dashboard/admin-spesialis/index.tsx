@@ -1,5 +1,6 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CaretDown,
   FunnelSimple,
   MagnifyingGlass,
   PaperPlaneTilt,
@@ -9,6 +10,7 @@ import {
   Tag,
   TrashSimple,
   UserPlus,
+  Broom,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { v4 as uuid } from "uuid";
@@ -22,8 +24,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/auth-context";
 import { useOnlineStatus } from "@/context/online-status-context";
 import { adminBhabinService } from "@/services/admin-bhabin-service";
+import { bhabinService } from "@/services/bhabin-service";
 import { taskService } from "@/services/task-service";
-import type { BhabinAccount } from "@/types/bhabin";
+import type { BhabinAccount, HarvestVerification, PlantConditionReport, RecipientVerification } from "@/types/bhabin";
 import type { Task, TaskPriority, TaskStatus } from "@/types/task";
 
 type AdminPanelKey = "tasks" | "accounts";
@@ -83,11 +86,60 @@ const AdminSpesialisDashboard = () => {
   const [accountModalAlert, setAccountModalAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+  const [isWilayahDropdownOpen, setIsWilayahDropdownOpen] = useState(false);
+  const [wilayahSearch, setWilayahSearch] = useState("");
+  const wilayahDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [isTaskWilayahDropdownOpen, setIsTaskWilayahDropdownOpen] = useState(false);
+  const [taskWilayahSearch, setTaskWilayahSearch] = useState("");
+  const taskWilayahDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [taskFeedback, setTaskFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [isSavingTask, setIsSavingTask] = useState(false);
 
   const { data: tasks = [], refetch } = useQuery({
     queryKey: ["tasks"],
     queryFn: () => taskService.list(),
   });
+
+  const recipientsQuery = useQuery({
+    queryKey: ["bhabin-recipients"],
+    queryFn: () => bhabinService.listRecipients(),
+  });
+
+  const plantProgressQuery = useQuery({
+    queryKey: ["bhabin-plant-progress"],
+    queryFn: () => bhabinService.listPlantProgress(),
+  });
+
+  const harvestQuery = useQuery({
+    queryKey: ["bhabin-harvests"],
+    queryFn: () => bhabinService.listHarvestVerifications(),
+  });
+
+  useEffect(() => {
+    if (!isWilayahDropdownOpen) {
+      setWilayahSearch("");
+    }
+  }, [isWilayahDropdownOpen]);
+
+  useEffect(() => {
+    if (!isTaskWilayahDropdownOpen) {
+      setTaskWilayahSearch("");
+    }
+  }, [isTaskWilayahDropdownOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (wilayahDropdownRef.current && !wilayahDropdownRef.current.contains(event.target as Node)) {
+        setIsWilayahDropdownOpen(false);
+      }
+      if (taskWilayahDropdownRef.current && !taskWilayahDropdownRef.current.contains(event.target as Node)) {
+        setIsTaskWilayahDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const {
     data: bhabinAccounts = [],
@@ -115,22 +167,219 @@ const AdminSpesialisDashboard = () => {
     });
   }, [accountSearch, bhabinAccounts]);
 
+  const queueTasks = useMemo(() => filteredTasks.filter((task) => task.status !== "selesai"), [filteredTasks]);
+
+  const wilayahOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    const push = (value?: string | null) => {
+      if (!value) return;
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      map.set(trimmed.toLowerCase(), trimmed);
+    };
+
+    bhabinAccounts.forEach((account) => push(account.wilayah));
+    recipientsQuery.data?.forEach((item) => push(item.wilayah));
+    plantProgressQuery.data?.forEach((item) => push(item.wilayah));
+    harvestQuery.data?.forEach((item) => push(item.lokasi));
+
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b, "id-ID"));
+  }, [bhabinAccounts, recipientsQuery.data, plantProgressQuery.data, harvestQuery.data]);
+
+  const filteredWilayahOptions = useMemo(() => {
+    const keyword = wilayahSearch.trim().toLowerCase();
+    if (!keyword) return wilayahOptions;
+    return wilayahOptions.filter((item) => item.toLowerCase().includes(keyword));
+  }, [wilayahOptions, wilayahSearch]);
+
+  const filteredTaskWilayahOptions = useMemo(() => {
+    const keyword = taskWilayahSearch.trim().toLowerCase();
+    if (!keyword) return wilayahOptions;
+    return wilayahOptions.filter((item) => item.toLowerCase().includes(keyword));
+  }, [wilayahOptions, taskWilayahSearch]);
+
+  const recipientStats = useMemo(() => {
+    const list: RecipientVerification[] = recipientsQuery.data ?? [];
+    const verified = list.filter((item) => item.status === "verified");
+    const pending = list.filter((item) => item.status === "pending");
+    const rejected = list.filter((item) => item.status === "rejected");
+
+    const latestVerifiedAt = verified
+      .map((item) => item.verifiedAt)
+      .filter(Boolean)
+      .sort((a, b) => new Date(b ?? "").getTime() - new Date(a ?? "").getTime())[0];
+
+    const recentVerified = verified
+      .slice()
+      .sort((a, b) => new Date(b.verifiedAt ?? "").getTime() - new Date(a.verifiedAt ?? "").getTime())
+      .slice(0, 3);
+
+    return {
+      total: list.length,
+      verified: verified.length,
+      pending: pending.length,
+      rejected: rejected.length,
+      latestVerifiedAt,
+      recentVerified,
+    };
+  }, [recipientsQuery.data]);
+
+  const plantStats = useMemo(() => {
+    const list: PlantConditionReport[] = plantProgressQuery.data ?? [];
+    const kondisi = {
+      baik: 0,
+      waspada: 0,
+      kritikal: 0,
+    };
+    const faseCounter: Record<string, number> = {};
+
+    list.forEach((item) => {
+      kondisi[item.kondisi] = (kondisi[item.kondisi] ?? 0) + 1;
+      faseCounter[item.fase] = (faseCounter[item.fase] ?? 0) + 1;
+    });
+
+    const fase = Object.entries(faseCounter)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    const latestUpdate = list
+      .map((item) => item.updatedAt)
+      .filter(Boolean)
+      .sort((a, b) => new Date(b ?? "").getTime() - new Date(a ?? "").getTime())[0];
+
+    return {
+      total: list.length,
+      kondisi: {
+        baik: kondisi.baik ?? 0,
+        waspada: kondisi.waspada ?? 0,
+        kritikal: kondisi.kritikal ?? 0,
+      },
+      fase,
+      latestUpdate,
+    };
+  }, [plantProgressQuery.data]);
+
+  const harvestStats = useMemo(() => {
+    const list: HarvestVerification[] = harvestQuery.data ?? [];
+
+    const totalArea = list.reduce((sum, item) => sum + (item.luasPanenHa ?? 0), 0);
+    const totalYield = list.reduce((sum, item) => sum + (item.produksiTon ?? 0), 0);
+
+    const latestHarvest = list
+      .slice()
+      .sort((a, b) => new Date(b.diverifikasiAt ?? "").getTime() - new Date(a.diverifikasiAt ?? "").getTime())[0];
+
+    return {
+      total: list.length,
+      totalArea,
+      totalYield,
+      latestHarvest,
+    };
+  }, [harvestQuery.data]);
+
   const handleCreateTask = async () => {
+    if (!draftTask.title.trim() || !draftTask.region.trim()) {
+      setTaskFeedback({ type: "error", message: "Lengkapi judul dan pilih wilayah sebelum menugaskan." });
+      return;
+    }
+    const wilayahTrimmed = draftTask.region.trim();
+    const bhabinEmails = bhabinAccounts
+      .filter((account) => account.wilayah?.trim().toLowerCase() === wilayahTrimmed.toLowerCase())
+      .map((account) => account.email);
+
+    const assignedTo = Array.from(new Set([
+      ...bhabinEmails,
+      "petugas@kab.kupang.id",
+    ])).filter(Boolean);
+
     const nextTask: Task = {
       id: uuid(),
-      title: draftTask.title,
-      description: draftTask.description,
-      region: draftTask.region,
+      title: draftTask.title.trim(),
+      description: draftTask.description.trim(),
+      region: wilayahTrimmed,
       dueDate: draftTask.dueDate,
       priority: draftTask.priority,
       status: "baru",
-      assignedTo: ["petugas@kab.kupang.id"],
+      assignedTo: assignedTo.length > 0 ? assignedTo : ["petugas@kab.kupang.id"],
       updatedAt: new Date().toISOString(),
     };
-    await taskService.assign(nextTask);
-    setDraftTask({ title: "", description: "", region: "", priority: "medium", dueDate: new Date().toISOString().slice(0, 10) });
-    refetch();
+
+    setIsSavingTask(true);
+    setTaskFeedback(null);
+    try {
+      const created = await taskService.assign(nextTask);
+      setTaskFeedback({
+        type: "success",
+        message: `Tugas "${created.title}" berhasil ditugaskan.`,
+      });
+      setDraftTask({ title: "", description: "", region: "", priority: "medium", dueDate: new Date().toISOString().slice(0, 10) });
+      setIsTaskWilayahDropdownOpen(false);
+      refetch();
+    } catch (error) {
+      console.error("Gagal membuat tugas", error);
+      setTaskFeedback({ type: "error", message: "Gagal menyimpan tugas. Coba lagi nanti." });
+    } finally {
+      setIsSavingTask(false);
+    }
   };
+
+  const handleClearCache = async () => {
+    const confirmed = window.confirm(
+      "Bersihkan cache aplikasi ini? Service worker, cache offline, dan data lokal akan dihapus lalu halaman dimuat ulang."
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+      if ("caches" in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+      }
+      const STORAGE_KEYS = [
+        "sip3s.admin.bhabin.accounts",
+        "sip3s.bhabin.recipients",
+        "sip3s.bhabin.plant",
+        "sip3s.bhabin.harvest",
+        "sip3s.bhabin.escort",
+        "sip3s.pendingReports",
+      ];
+      STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+      alert("Cache aplikasi telah dibersihkan. Halaman akan dimuat ulang.");
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to clear cache", error);
+      alert("Gagal membersihkan cache. Harap bersihkan cache browser secara manual.");
+    }
+  }
+
+  const handleTaskStatusChange = async (task: Task, status: TaskStatus) => {
+    setTaskFeedback(null);
+    setUpdatingTaskId(task.id);
+    try {
+      const updated = await taskService.updateStatus(task.id, status);
+      if (!updated) {
+        throw new Error("Tugas tidak ditemukan");
+      }
+      setTaskFeedback({
+        type: "success",
+        message: status === "selesai"
+          ? `Tugas "${task.title}" disetujui.`
+          : `Tugas "${task.title}" ditandai untuk ditinjau.`,
+      });
+      refetch();
+    } catch (error) {
+      console.error("Gagal memperbarui status tugas", error);
+      setTaskFeedback({ type: "error", message: "Gagal memperbarui status tugas." });
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  };
+
+;
 
   const openCreateAccountModal = () => {
     setEditingAccount(null);
@@ -221,11 +470,15 @@ const AdminSpesialisDashboard = () => {
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-4 py-10">
       <header className="flex flex-col gap-4 rounded-3xl border border-hijau-hutan/30 bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm text-slate-netral">Admin Spesialis</p>
+          <p className="text-sm text-slate-netral">Admin Polres Kupang</p>
           <h1 className="text-3xl font-semibold text-hijau-hutan">{user?.nama ?? "Admin"}</h1>
           <p className="text-sm text-slate-netral">Kelola laporan lapangan dan koordinasi tugas wilayah Kupang.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" onClick={handleClearCache} className="flex items-center gap-2">
+            <Broom className="h-4 w-4" weight="bold" />
+            <span>Bersihkan Cache</span>
+          </Button>
           <Badge variant={isOnline ? "success" : "warning"}>{isOnline ? "Online" : "Offline"}</Badge>
           <Button variant="outline" onClick={logout}>
             <SignOut className="mr-2 h-5 w-5" weight="bold" /> Keluar
@@ -240,6 +493,161 @@ const AdminSpesialisDashboard = () => {
         </TabsList>
 
         <TabsContent value="tasks" className="space-y-6">
+          {taskFeedback && (
+            <Alert variant={taskFeedback.type === "success" ? "success" : "error"}>{taskFeedback.message}</Alert>
+          )}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="bg-white">
+              <CardHeader>
+                <CardTitle>Distribusi Produk Subsidi</CardTitle>
+                <CardDescription>Akumulasi verifikasi dari seluruh Bhabinkamtibmas.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-netral">
+                <div className="flex items-center justify-between">
+                  <span>Total penerima</span>
+                  <span className="text-lg font-semibold text-teks-gelap">{recipientStats.total.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between rounded-2xl border border-hijau-hutan/30 px-3 py-2">
+                    <span>Diverifikasi</span>
+                    <Badge variant="success">{recipientStats.verified.toLocaleString("id-ID")}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-biru-pemerintah/30 px-3 py-2">
+                    <span>Menunggu</span>
+                    <Badge variant="neutral">{recipientStats.pending.toLocaleString("id-ID")}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-oranye/30 px-3 py-2">
+                    <span>Ditolak</span>
+                    <Badge variant="warning">{recipientStats.rejected.toLocaleString("id-ID")}</Badge>
+                  </div>
+                </div>
+                {recipientsQuery.isLoading ? (
+                  <p className="text-xs text-slate-netral">Memuat data penerima</p>
+                ) : (
+                  <>
+                    {recipientStats.latestVerifiedAt && (
+                      <p className="text-xs text-slate-netral">
+                        Verifikasi terbaru:{" "}
+                        {new Date(recipientStats.latestVerifiedAt).toLocaleString("id-ID", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </p>
+                    )}
+                    {recipientStats.recentVerified.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-teks-gelap">Penerima terbaru</p>
+                        <ul className="mt-1 space-y-1 text-xs">
+                          {recipientStats.recentVerified.map((recipient) => (
+                            <li key={recipient.id} className="flex justify-between rounded-xl bg-abu-kartu/20 px-3 py-2">
+                              <span>{recipient.nama}</span>
+                              <span className="text-slate-netral">{recipient.komoditas}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white">
+              <CardHeader>
+                <CardTitle>Kondisi Tanaman</CardTitle>
+                <CardDescription>Ringkasan laporan perkembangan lapangan.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-netral">
+                <div className="flex items-center justify-between">
+                  <span>Total laporan</span>
+                  <span className="text-lg font-semibold text-teks-gelap">{plantStats.total.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between rounded-2xl border border-hijau-hutan/30 px-3 py-2">
+                    <span>Baik</span>
+                    <Badge variant="success">{plantStats.kondisi.baik.toLocaleString("id-ID")}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-biru-pemerintah/30 px-3 py-2">
+                    <span>Perlu perhatian</span>
+                    <Badge variant="neutral">{plantStats.kondisi.waspada.toLocaleString("id-ID")}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-oranye/30 px-3 py-2">
+                    <span>Kritikal</span>
+                    <Badge variant="warning">{plantStats.kondisi.kritikal.toLocaleString("id-ID")}</Badge>
+                  </div>
+                </div>
+                {plantProgressQuery.isLoading ? (
+                  <p className="text-xs text-slate-netral">Memuat laporan tanaman</p>
+                ) : plantStats.latestUpdate ? (
+                  <p className="text-xs text-slate-netral">
+                    Update terakhir:{" "}
+                    {new Date(plantStats.latestUpdate).toLocaleString("id-ID", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-netral">Belum ada laporan tanaman.</p>
+                )}
+                {plantStats.fase.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-teks-gelap">Fase paling sering</p>
+                    <ul className="mt-1 space-y-1 text-xs">
+                      {plantStats.fase.map(([fase, count]) => (
+                        <li key={fase} className="flex justify-between rounded-xl bg-abu-kartu/20 px-3 py-2">
+                          <span>{fase}</span>
+                          <span className="text-slate-netral">{count.toLocaleString("id-ID")} laporan</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white">
+              <CardHeader>
+                <CardTitle>Verifikasi Hasil Panen</CardTitle>
+                <CardDescription>Ikhtisar panen yang diverifikasi lapangan.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-netral">
+                <div className="flex items-center justify-between">
+                  <span>Total verifikasi</span>
+                  <span className="text-lg font-semibold text-teks-gelap">{harvestStats.total.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="rounded-2xl border border-abu-kartu px-3 py-2">
+                  <p className="text-xs text-slate-netral">Akumulasi luas panen</p>
+                  <p className="text-lg font-semibold text-teks-gelap">
+                    {harvestStats.totalArea.toLocaleString("id-ID", { maximumFractionDigits: 2 })} ha
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-abu-kartu px-3 py-2">
+                  <p className="text-xs text-slate-netral">Total produksi</p>
+                  <p className="text-lg font-semibold text-teks-gelap">
+                    {harvestStats.totalYield.toLocaleString("id-ID", { maximumFractionDigits: 2 })} ton
+                  </p>
+                </div>
+                {harvestQuery.isLoading ? (
+                  <p className="text-xs text-slate-netral">Memuat data panen</p>
+                ) : harvestStats.latestHarvest ? (
+                  <div className="rounded-2xl bg-abu-kartu/20 px-3 py-2 text-xs">
+                    <p className="font-medium text-teks-gelap">{harvestStats.latestHarvest.petani}</p>
+                    <p className="text-slate-netral">{harvestStats.latestHarvest.komoditas}</p>
+                    <p className="text-slate-netral">
+                      Diverifikasi:{" "}
+                      {new Date(harvestStats.latestHarvest.diverifikasiAt ?? "").toLocaleString("id-ID", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-netral">Belum ada verifikasi panen.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
             <Card className="bg-white">
               <CardHeader>
@@ -247,7 +655,7 @@ const AdminSpesialisDashboard = () => {
                 <CardDescription>Verifikasi dan beri keputusan</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {tasks.slice(0, 3).map((task) => (
+                {queueTasks.slice(0, 3).map((task) => (
                   <div key={task.id} className="flex flex-col gap-2 rounded-2xl border border-abu-kartu p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <Badge className={priorityColor[task.priority]}>{task.priority.toUpperCase()}</Badge>
@@ -259,14 +667,26 @@ const AdminSpesialisDashboard = () => {
                       <Tag className="h-4 w-4 text-hijau-hutan" /> {task.region}
                     </div>
                     <div className="flex gap-3">
-                      <Button variant="secondary" size="sm">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={updatingTaskId === task.id}
+                        onClick={() => handleTaskStatusChange(task, "selesai")}
+                      >
                         <PaperPlaneTilt className="mr-2 h-4 w-4" weight="bold" /> Approve
                       </Button>
-                      <Button variant="outline" size="sm">Review</Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={updatingTaskId === task.id}
+                        onClick={() => handleTaskStatusChange(task, "proses")}
+                      >
+                        Review
+                      </Button>
                     </div>
                   </div>
                 ))}
-                {tasks.length === 0 && <p className="text-sm text-slate-netral">Belum ada laporan masuk.</p>}
+                {queueTasks.length === 0 && <p className="text-sm text-slate-netral">Belum ada laporan masuk.</p>}
               </CardContent>
             </Card>
 
@@ -304,11 +724,50 @@ const AdminSpesialisDashboard = () => {
                       </label>
                       <label className="flex flex-col gap-1">
                         Wilayah
-                        <input
-                          className="rounded-2xl border border-abu-kartu px-3 py-2"
-                          value={draftTask.region}
-                          onChange={(event) => setDraftTask((prev) => ({ ...prev, region: event.target.value }))}
-                        />
+                        <div ref={taskWilayahDropdownRef} className="relative">
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-2xl border border-abu-kartu px-3 py-2 text-left text-sm transition hover:border-biru-pemerintah/40"
+                            onClick={() => setIsTaskWilayahDropdownOpen((prev) => !prev)}
+                          >
+                            <span className={draftTask.region ? "text-teks-gelap" : "text-slate-netral"}>
+                              {draftTask.region || "Pilih kelurahan/desa"}
+                            </span>
+                            <CaretDown className={`h-4 w-4 text-slate-netral transition ${isTaskWilayahDropdownOpen ? "rotate-180" : ""}`} />
+                          </button>
+                          {isTaskWilayahDropdownOpen && (
+                            <div className="absolute z-20 mt-2 w-full rounded-2xl border border-abu-kartu bg-white shadow-lg">
+                              <div className="border-b border-abu-kartu px-3 py-2">
+                                <input
+                                  autoFocus
+                                  value={taskWilayahSearch}
+                                  onChange={(event) => setTaskWilayahSearch(event.target.value)}
+                                  placeholder="Cari kelurahan/desa"
+                                  className="w-full rounded-xl border border-abu-kartu px-3 py-2 text-sm outline-none focus:border-biru-pemerintah"
+                                />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto py-1">
+                                {filteredTaskWilayahOptions.length > 0 ? (
+                                  filteredTaskWilayahOptions.map((option) => (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      className="w-full px-3 py-2 text-left text-sm text-slate-netral hover:bg-biru-pemerintah/10"
+                                      onClick={() => {
+                                        setDraftTask((prev) => ({ ...prev, region: option }));
+                                        setIsTaskWilayahDropdownOpen(false);
+                                      }}
+                                    >
+                                      {option}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <p className="px-3 py-2 text-xs text-slate-netral">Wilayah tidak ditemukan.</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </label>
                       <label className="flex flex-col gap-1">
                         Prioritas
@@ -331,8 +790,8 @@ const AdminSpesialisDashboard = () => {
                           onChange={(event) => setDraftTask((prev) => ({ ...prev, dueDate: event.target.value }))}
                         />
                       </label>
-                      <Button className="w-full" onClick={handleCreateTask}>
-                        Simpan & Tugaskan
+                      <Button className="w-full" onClick={handleCreateTask} disabled={isSavingTask}>
+                        {isSavingTask ? "Menyimpan..." : "Simpan & Tugaskan"}
                       </Button>
                     </div>
                   </DialogContent>
@@ -524,12 +983,51 @@ const AdminSpesialisDashboard = () => {
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  Wilayah tugas
-                  <input
-                    className="rounded-2xl border border-abu-kartu px-3 py-2"
-                    value={accountForm.wilayah}
-                    onChange={(event) => setAccountForm((prev) => ({ ...prev, wilayah: event.target.value }))}
-                  />
+                  Wilayah
+                  <div ref={wilayahDropdownRef} className="relative">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-2xl border border-abu-kartu px-3 py-2 text-left text-sm transition hover:border-biru-pemerintah/40"
+                      onClick={() => setIsWilayahDropdownOpen((prev) => !prev)}
+                    >
+                      <span className={draftTask.region ? "text-teks-gelap" : "text-slate-netral"}>
+                        {draftTask.region || "Pilih kelurahan/desa"}
+                      </span>
+                      <CaretDown className={`h-4 w-4 text-slate-netral transition ${isWilayahDropdownOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {isWilayahDropdownOpen && (
+                      <div className="absolute z-20 mt-2 w-full rounded-2xl border border-abu-kartu bg-white shadow-lg">
+                        <div className="border-b border-abu-kartu px-3 py-2">
+                          <input
+                            autoFocus
+                            value={wilayahSearch}
+                            onChange={(event) => setWilayahSearch(event.target.value)}
+                            placeholder="Cari kelurahan/desa"
+                            className="w-full rounded-xl border border-abu-kartu px-3 py-2 text-sm outline-none focus:border-biru-pemerintah"
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto py-1">
+                          {filteredWilayahOptions.length > 0 ? (
+                            filteredWilayahOptions.map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                className="w-full px-3 py-2 text-left text-sm text-slate-netral hover:bg-biru-pemerintah/10"
+                                onClick={() => {
+                                  setDraftTask((prev) => ({ ...prev, region: option }));
+                                  setIsWilayahDropdownOpen(false);
+                                }}
+                              >
+                                {option}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-xs text-slate-netral">Wilayah tidak ditemukan.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </label>
                 <label className="flex flex-col gap-1">
                   Nomor telepon
@@ -586,4 +1084,5 @@ const AdminSpesialisDashboard = () => {
 };
 
 export default AdminSpesialisDashboard;
+
 
