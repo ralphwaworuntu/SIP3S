@@ -36,7 +36,9 @@ const ProtectedRoute: React.FC<{
     return <Navigate to={ROUTES.beranda} replace />;
   }
 
-  if (!allowedRoles.includes(user.role)) {
+  const canAccess = allowedRoles.includes(user.role) || user.role === "super-admin";
+
+  if (!canAccess) {
     return <Navigate to={ROUTES.beranda} replace />;
   }
 

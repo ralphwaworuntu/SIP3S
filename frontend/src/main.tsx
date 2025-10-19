@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import App from "./App";
 import "./index.css";
+import "leaflet/dist/leaflet.css";
 import { AuthProvider } from "./context/auth-context";
 import { OnlineStatusProvider } from "./context/online-status-context";
 

@@ -78,7 +78,7 @@ export interface EscortRequest {
   titikKumpul: string;
   estimasiPeserta: number;
   kebutuhanPersonel: number;
-  status: "baru" | "dijadwalkan" | "selesai";
+  status: "baru" | "dijadwalkan" | "selesai" | "approved";
   catatan?: string;
   diajukanOleh: string;
   diajukanAt: string;

@@ -30,6 +30,7 @@ interface FeedbackState {
 const statusBadge: Record<EscortRequest["status"], { label: string; variant: "success" | "warning" | "neutral" }> = {
   baru: { label: "Menunggu", variant: "warning" },
   dijadwalkan: { label: "Dijadwalkan", variant: "neutral" },
+  approved: { label: "Disetujui", variant: "success" },
   selesai: { label: "Selesai", variant: "success" },
 };
 

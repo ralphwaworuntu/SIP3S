@@ -203,6 +203,9 @@ class BhabinService {
   async submitEscortRequest(payload: EscortRequestPayload): Promise<EscortRequest> {
     try {
       const { data } = await apiClient.post<EscortRequest>("/bhabin/escorts", payload);
+      const cached = readLocal(STORAGE_KEY.escort, mockEscortRequests);
+      const nextCache = [data, ...cached.filter((item) => item.id !== data.id)];
+      persistLocal(STORAGE_KEY.escort, nextCache);
       return data;
     } catch (_error) {
       const record: EscortRequest = {
@@ -220,6 +223,28 @@ class BhabinService {
       const list = [record, ...readLocal(STORAGE_KEY.escort, mockEscortRequests)];
       persistLocal(STORAGE_KEY.escort, list);
       return record;
+    }
+  }
+
+  async updateEscortStatus(id: string, status: EscortRequest["status"]): Promise<EscortRequest | null> {
+    try {
+      const { data } = await apiClient.patch<EscortRequest>(`/bhabin/escorts/${id}`, { status });
+      const list = readLocal(STORAGE_KEY.escort, mockEscortRequests);
+      const next = list.some((item) => item.id === data.id)
+        ? list.map((item) => (item.id === data.id ? data : item))
+        : [data, ...list];
+      persistLocal(STORAGE_KEY.escort, next);
+      return data;
+    } catch (_error) {
+      const list = readLocal(STORAGE_KEY.escort, mockEscortRequests);
+      const index = list.findIndex((item) => item.id === id);
+      if (index === -1) {
+        return null;
+      }
+      const updated: EscortRequest = { ...list[index], status };
+      const next = list.map((item) => (item.id === id ? updated : item));
+      persistLocal(STORAGE_KEY.escort, next);
+      return updated;
     }
   }
 }

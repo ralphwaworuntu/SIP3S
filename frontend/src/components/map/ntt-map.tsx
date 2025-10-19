@@ -1,49 +1,349 @@
-﻿interface RegionPoint {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  status: "normal" | "warning" | "critical";
-  value: number;
-}
+import { useEffect, useMemo, useState } from "react";
+import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import type { CircleMarkerOptions, LatLngBoundsExpression, LatLngTuple } from "leaflet";
+import L from "leaflet";
 
-const points: RegionPoint[] = [
-  { id: "kupang", name: "Kupang", x: 180, y: 140, status: "warning", value: 75 },
-  { id: "belu", name: "Belu", x: 260, y: 120, status: "normal", value: 92 },
-  { id: "sikka", name: "Sikka", x: 210, y: 190, status: "critical", value: 60 },
-  { id: "sumba", name: "Sumba", x: 120, y: 200, status: "normal", value: 88 },
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { mockNttMonitoring, mockReports } from "@/utils/mock-data";
+
+type RegionMonitoring = (typeof mockNttMonitoring)[number];
+type ReportItem = (typeof mockReports)[number];
+
+const FALLBACK_BOUNDS: LatLngBoundsExpression = [
+  [-11.5, 118.0],
+  [-7.0, 127.0],
 ];
 
-const colorMap: Record<RegionPoint["status"], string> = {
-  normal: "fill-hijau-hutan",
-  warning: "fill-oranye-hangat",
-  critical: "fill-red-500",
+const statusStyles: Record<
+  RegionMonitoring["status"],
+  { fill: string; border: string; highlight: string; label: string; badge: "success" | "warning" | "neutral" }
+> = {
+  normal: {
+    fill: "#15803d",
+    border: "#bbf7d0",
+    highlight: "#166534",
+    label: "Stabil",
+    badge: "success",
+  },
+  warning: {
+    fill: "#f97316",
+    border: "#fed7aa",
+    highlight: "#c2410c",
+    label: "Perlu perhatian",
+    badge: "warning",
+  },
+  critical: {
+    fill: "#ef4444",
+    border: "#fecaca",
+    highlight: "#b91c1c",
+    label: "Kritis",
+    badge: "warning",
+  },
 };
 
-export const NttMapWidget = () => (
-  <div className="relative overflow-hidden rounded-3xl border border-abu-kartu bg-gradient-to-br from-biru-pemerintah/5 to-white p-4 shadow-sm">
-    <svg viewBox="0 0 320 240" className="w-full">
-      <rect x="10" y="60" width="80" height="40" className="fill-biru-pemerintah/10" rx="12" />
-      <rect x="100" y="90" width="70" height="35" className="fill-biru-pemerintah/15" rx="12" />
-      <rect x="180" y="70" width="60" height="30" className="fill-biru-pemerintah/12" rx="12" />
-      <rect x="150" y="150" width="110" height="40" className="fill-biru-pemerintah/20" rx="12" />
+const reportStatusStyles: Record<
+  ReportItem["status"],
+  { color: string; label: string; badge: "success" | "warning" | "neutral" }
+> = {
+  terkirim: {
+    color: "#16a34a",
+    label: "Tersinkron",
+    badge: "success",
+  },
+  pending: {
+    color: "#f59e0b",
+    label: "Menunggu",
+    badge: "warning",
+  },
+};
 
-      {points.map((point) => (
-        <g key={point.id}>
-          <circle cx={point.x} cy={point.y} r={12} className={colorMap[point.status]} opacity={0.85} />
-          <text x={point.x} y={point.y + 28} textAnchor="middle" className="fill-teks-gelap text-[10px] font-medium">
-            {point.name}
-          </text>
-          <text x={point.x} y={point.y + 40} textAnchor="middle" className="fill-slate-netral text-[9px]">
-            {point.value}%
-          </text>
-        </g>
-      ))}
-    </svg>
-    <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-netral">
-      <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-hijau-hutan" /> Stabil</div>
-      <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-oranye-hangat" /> Perlu perhatian</div>
-      <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> Kritis</div>
+const regionLegend = (Object.keys(statusStyles) as Array<RegionMonitoring["status"]>).map((status) => ({
+  status,
+  label: statusStyles[status].label,
+  color: statusStyles[status].fill,
+}));
+
+const reportLegend = Object.entries(reportStatusStyles).map(([key, meta]) => ({
+  key,
+  label: meta.label,
+  color: meta.color,
+}));
+
+const computeBounds = (): LatLngBoundsExpression => {
+  if (mockNttMonitoring.length === 0) return FALLBACK_BOUNDS;
+  const latitudes = mockNttMonitoring.map((region) => region.latitude);
+  const longitudes = mockNttMonitoring.map((region) => region.longitude);
+
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+
+  const padding = 0.6;
+
+  return [
+    [minLat - padding, minLng - padding],
+    [maxLat + padding, maxLng + padding],
+  ];
+};
+
+const computeCenter = (): LatLngTuple => {
+  if (mockNttMonitoring.length === 0) return [-9.5, 123.8];
+  const bounds = computeBounds() as [[number, number], [number, number]];
+  const southWest = bounds[0];
+  const northEast = bounds[1];
+  return [(southWest[0] + northEast[0]) / 2, (southWest[1] + northEast[1]) / 2];
+};
+
+const ConstrainView: React.FC<{ bounds: LatLngBoundsExpression }> = ({ bounds }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    const leafletBounds = L.latLngBounds(bounds);
+    map.setMaxBounds(leafletBounds);
+    map.fitBounds(leafletBounds, { padding: [24, 24] });
+  }, [map, bounds]);
+
+  return null;
+};
+
+export const NttMapWidget: React.FC = () => {
+  const [activeRegionId, setActiveRegionId] = useState<string>(mockNttMonitoring[0]?.id ?? "");
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    const iconRetinaUrl = new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).toString();
+    const iconUrl = new URL("leaflet/dist/images/marker-icon.png", import.meta.url).toString();
+    const shadowUrl = new URL("leaflet/dist/images/marker-shadow.png", import.meta.url).toString();
+
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl,
+      iconUrl,
+      shadowUrl,
+    });
+  }, [isClient]);
+
+  const bounds = useMemo<LatLngBoundsExpression>(() => computeBounds(), []);
+  const center = useMemo<LatLngTuple>(() => computeCenter(), []);
+
+  const activeRegion = useMemo<RegionMonitoring | undefined>(
+    () => mockNttMonitoring.find((region) => region.id === activeRegionId) ?? mockNttMonitoring[0],
+    [activeRegionId]
+  );
+
+  const numberFormatter = useMemo(() => new Intl.NumberFormat("id-ID"), []);
+  const dateTimeFormatter = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" })
+        : null,
+    []
+  );
+
+  const associatedReports = useMemo(() => {
+    if (!activeRegion) return [];
+    const regionName = activeRegion.name.toLowerCase();
+    const regionShort = activeRegion.shortLabel.toLowerCase();
+    return mockReports.filter((report) => {
+      const address = report.lokasi.alamat.toLowerCase();
+      return address.includes(regionName) || address.includes(regionShort);
+    });
+  }, [activeRegion]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-3xl border border-abu-kartu bg-white p-4 shadow-sm">
+        {isClient ? (
+          <MapContainer
+            center={center}
+            zoom={7}
+            minZoom={6}
+            maxZoom={12}
+            scrollWheelZoom
+            className="h-[420px] w-full rounded-2xl"
+          >
+            <ConstrainView bounds={bounds} />
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> kontributor'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {mockNttMonitoring.map((region) => {
+              const styles = statusStyles[region.status];
+              const isActive = region.id === activeRegionId;
+              const markerRadius = Math.max(8, Math.min(16, region.progress / 5));
+              const pathOptions: CircleMarkerOptions = {
+                color: isActive ? styles.highlight : styles.border,
+                fillColor: styles.fill,
+                fillOpacity: isActive ? 0.85 : 0.6,
+                weight: isActive ? 4 : 2,
+              };
+
+              return (
+                <CircleMarker
+                  key={region.id}
+                  center={[region.latitude, region.longitude]}
+                  radius={markerRadius}
+                  pathOptions={pathOptions}
+                  eventHandlers={{
+                    click: () => setActiveRegionId(region.id),
+                    mouseover: () => setActiveRegionId(region.id),
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -markerRadius]} opacity={0.9}>
+                    <div className="space-y-1 text-xs">
+                      <p className="font-semibold text-teks-gelap">{region.name}</p>
+                      <p className="text-slate-netral">Serapan {region.progress}%</p>
+                      <p className="text-slate-netral">Buffer {region.bufferTon} ton</p>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="space-y-1 text-sm">
+                      <p className="font-semibold text-teks-gelap">{region.name}</p>
+                      <p>Status: {styles.label}</p>
+                      <p>Serapan distribusi: {region.progress}%</p>
+                      <p>Ketepatan jadwal: {region.coverage}%</p>
+                      <p>Buffer stok: {numberFormatter.format(region.bufferTon)} ton</p>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })}
+
+            {mockReports.map((report) => {
+              const style = reportStatusStyles[report.status] ?? reportStatusStyles.pending;
+              return (
+                <CircleMarker
+                  key={report.id}
+                  center={[report.lokasi.latitude, report.lokasi.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: style.color,
+                    fillColor: style.color,
+                    fillOpacity: 0.85,
+                    weight: 1.5,
+                  }}
+                >
+                  <Popup>
+                    <div className="space-y-1 text-sm">
+                      <p className="font-semibold text-teks-gelap">{report.komoditas}</p>
+                      <p className="text-slate-netral">{report.lokasi.alamat}</p>
+                      <p>Status: {style.label}</p>
+                      <p>Penyaluran: {report.kuotaTersalurkan}%</p>
+                      <p className="text-slate-netral">Catatan: {report.catatan}</p>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })}
+          </MapContainer>
+        ) : (
+          <div className="flex h-[420px] items-center justify-center rounded-2xl bg-abu-kartu/40 text-sm text-slate-netral">
+            Menyiapkan peta interaktif...
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-netral">
+          {regionLegend.map((legend) => (
+            <div key={legend.status} className="flex items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: legend.color }}
+              />
+              <span>{legend.label}</span>
+            </div>
+          ))}
+          <span className="hidden h-3 w-px bg-abu-kartu/80 sm:block" />
+          {reportLegend.map((legend) => (
+            <div key={legend.key} className="flex items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: legend.color }}
+              />
+              <span>{legend.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-abu-kartu bg-white/90 p-4 shadow-sm backdrop-blur">
+        {activeRegion ? (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-netral">Wilayah terpilih</p>
+              <h3 className="mt-1 text-xl font-semibold text-biru-pemerintah">{activeRegion.name}</h3>
+              <Badge variant={statusStyles[activeRegion.status].badge} className="mt-2">
+                {statusStyles[activeRegion.status].label}
+              </Badge>
+              <p className="mt-3 text-sm leading-relaxed text-slate-netral">{activeRegion.notes}</p>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <div>
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-netral">
+                  <span>Serapan distribusi</span>
+                  <span className="text-teks-gelap">{activeRegion.progress}%</span>
+                </div>
+                <Progress value={activeRegion.progress} className="mt-2 h-2" />
+              </div>
+              <div className="flex items-center justify-between text-slate-netral">
+                <span>Ketepatan jadwal</span>
+                <span className="font-semibold text-teks-gelap">{activeRegion.coverage}%</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-netral">
+                <span>Buffer stok</span>
+                <span className="font-semibold text-teks-gelap">
+                  {numberFormatter.format(activeRegion.bufferTon)} ton
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-netral">
+                <span>Laporan aktif</span>
+                <span className="font-semibold text-teks-gelap">{activeRegion.alerts}</span>
+              </div>
+              <p className="text-xs text-slate-netral">
+                Diperbarui{" "}
+                {dateTimeFormatter
+                  ? dateTimeFormatter.format(new Date(activeRegion.updatedAt))
+                  : activeRegion.updatedAt}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-netral">
+                Laporan terbaru wilayah ini
+              </p>
+              {associatedReports.length > 0 ? (
+                <ul className="space-y-2 text-xs">
+                  {associatedReports.slice(0, 3).map((report) => (
+                    <li key={report.id} className="flex flex-col gap-1 rounded-2xl border border-abu-kartu/70 bg-abu-kartu/20 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-teks-gelap">{report.komoditas}</span>
+                        <Badge variant={reportStatusStyles[report.status]?.badge ?? "neutral"}>
+                          {reportStatusStyles[report.status]?.label ?? report.status}
+                        </Badge>
+                      </div>
+                      <p className="text-slate-netral">{report.lokasi.alamat}</p>
+                      <p className="text-slate-netral">Penyaluran {report.kuotaTersalurkan}%</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-netral">Belum ada laporan terkait wilayah ini.</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-slate-netral">
+            Data pengawasan belum tersedia.
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
+

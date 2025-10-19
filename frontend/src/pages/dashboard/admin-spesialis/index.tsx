@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Broom,
+  CalendarBlank,
   CaretDown,
   FunnelSimple,
   MagnifyingGlass,
-  PaperPlaneTilt,
+  MapPin,
   PencilSimple,
   PlusCircle,
+  Shield,
   SignOut,
-  Tag,
   TrashSimple,
   UserPlus,
-  Broom,
+  UsersThree,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { v4 as uuid } from "uuid";
+import Swal from "sweetalert2";
+import { useLocation } from "react-router-dom";
 
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +30,13 @@ import { useOnlineStatus } from "@/context/online-status-context";
 import { adminBhabinService } from "@/services/admin-bhabin-service";
 import { bhabinService } from "@/services/bhabin-service";
 import { taskService } from "@/services/task-service";
-import type { BhabinAccount, HarvestVerification, PlantConditionReport, RecipientVerification } from "@/types/bhabin";
+import type {
+  BhabinAccount,
+  EscortRequest,
+  HarvestVerification,
+  PlantConditionReport,
+  RecipientVerification,
+} from "@/types/bhabin";
 import type { Task, TaskPriority, TaskStatus } from "@/types/task";
 
 type AdminPanelKey = "tasks" | "accounts";
@@ -53,19 +63,45 @@ const statusLabel: Record<TaskStatus, string> = {
   selesai: "Selesai",
 };
 
-const createEmptyAccountForm = (): AccountFormState => ({
+const escortStatusMeta: Record<EscortRequest["status"], { label: string; variant: "success" | "warning" | "neutral" }> =
+  {
+    baru: { label: "Menunggu", variant: "warning" },
+    dijadwalkan: { label: "Dijadwalkan", variant: "neutral" },
+    approved: { label: "Disetujui", variant: "success" },
+    selesai: { label: "Selesai", variant: "success" },
+  };
+
+const formatEscortDateTime = (value: string) =>
+  new Date(value).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+
+const createEmptyAccountForm = (initialWilayah = ""): AccountFormState => ({
   nama: "",
   email: "",
   agency: "",
-  wilayah: "",
+  wilayah: initialWilayah,
   phone: "",
   password: "",
   status: "active",
 });
 
-const AdminSpesialisDashboard = () => {
+type AdminSpesialisDashboardProps = {
+  forcedRegion?: string;
+};
+
+const AdminSpesialisDashboard: React.FC<AdminSpesialisDashboardProps> = ({ forcedRegion }) => {
   const { user, logout } = useAuth();
   const { isOnline } = useOnlineStatus();
+  const location = useLocation();
+  const queryRegion = useMemo(() => {
+    try {
+      return new URLSearchParams(location.search).get("region")?.trim() ?? "";
+    } catch (_error) {
+      return "";
+    }
+  }, [location.search]);
+  const resolvedRegion = (forcedRegion?.trim() || queryRegion).trim();
+  const normalizedRegion = resolvedRegion.toLowerCase();
+  const shouldFilterRegion = normalizedRegion.length > 0;
 
   const [activePanel, setActivePanel] = useState<AdminPanelKey>("tasks");
   const [search, setSearch] = useState("");
@@ -73,13 +109,13 @@ const AdminSpesialisDashboard = () => {
   const [draftTask, setDraftTask] = useState({
     title: "",
     description: "",
-    region: "",
+    region: resolvedRegion,
     priority: "medium" as TaskPriority,
     dueDate: new Date().toISOString().slice(0, 10),
   });
 
   const [accountSearch, setAccountSearch] = useState("");
-  const [accountForm, setAccountForm] = useState<AccountFormState>(() => createEmptyAccountForm());
+  const [accountForm, setAccountForm] = useState<AccountFormState>(() => createEmptyAccountForm(resolvedRegion));
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<BhabinAccount | null>(null);
   const [accountAlert, setAccountAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -93,7 +129,8 @@ const AdminSpesialisDashboard = () => {
   const [taskWilayahSearch, setTaskWilayahSearch] = useState("");
   const taskWilayahDropdownRef = useRef<HTMLDivElement | null>(null);
   const [taskFeedback, setTaskFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [escortFeedback, setEscortFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [updatingEscortId, setUpdatingEscortId] = useState<string | null>(null);
   const [isSavingTask, setIsSavingTask] = useState(false);
 
   const { data: tasks = [], refetch } = useQuery({
@@ -114,6 +151,11 @@ const AdminSpesialisDashboard = () => {
   const harvestQuery = useQuery({
     queryKey: ["bhabin-harvests"],
     queryFn: () => bhabinService.listHarvestVerifications(),
+  });
+
+  const escortRequestsQuery = useQuery({
+    queryKey: ["bhabin-escort-requests"],
+    queryFn: () => bhabinService.listEscortRequests(),
   });
 
   useEffect(() => {
@@ -154,22 +196,131 @@ const AdminSpesialisDashboard = () => {
     return tasks.filter((task) => {
       const matchesSearch = task.title.toLowerCase().includes(search.toLowerCase());
       const matchesStatus = selectedStatus === "semua" ? true : task.status === selectedStatus;
-      return matchesSearch && matchesStatus;
+      const matchesRegion =
+        !shouldFilterRegion || task.region.trim().toLowerCase() === normalizedRegion;
+      return matchesSearch && matchesStatus && matchesRegion;
     });
-  }, [search, selectedStatus, tasks]);
+  }, [normalizedRegion, search, selectedStatus, shouldFilterRegion, tasks]);
 
   const filteredAccounts = useMemo(() => {
     const keyword = accountSearch.trim().toLowerCase();
-    if (!keyword) return bhabinAccounts;
     return bhabinAccounts.filter((account) => {
-      const haystack = [account.nama, account.email, account.wilayah ?? "", account.agency ?? ""].join(" ").toLowerCase();
-      return haystack.includes(keyword);
+      const matchesSearch = keyword
+        ? [account.nama, account.email, account.wilayah ?? "", account.agency ?? ""]
+            .join(" ")
+            .toLowerCase()
+            .includes(keyword)
+        : true;
+      const matchesRegion =
+        !shouldFilterRegion ||
+        (account.wilayah ?? "").trim().toLowerCase() === normalizedRegion;
+      return matchesSearch && matchesRegion;
     });
-  }, [accountSearch, bhabinAccounts]);
+  }, [accountSearch, bhabinAccounts, normalizedRegion, shouldFilterRegion]);
 
-  const queueTasks = useMemo(() => filteredTasks.filter((task) => task.status !== "selesai"), [filteredTasks]);
+  const pendingEscortRequests = useMemo(() => {
+    const baseList = escortRequestsQuery.data ?? [];
+    const list = shouldFilterRegion
+      ? baseList.filter((request) => request.wilayah.trim().toLowerCase() === normalizedRegion)
+      : baseList;
+    const pendingStatuses: Array<EscortRequest["status"]> = ["baru", "dijadwalkan"];
+    return list
+      .filter((request) => pendingStatuses.includes(request.status))
+      .sort((a, b) => new Date(a.jadwal).getTime() - new Date(b.jadwal).getTime());
+  }, [escortRequestsQuery.data, normalizedRegion, shouldFilterRegion]);
+
+  const completedEscortRequests = useMemo(() => {
+    const list = escortRequestsQuery.data ?? [];
+    return list
+      .filter((request) => request.status === "approved" || request.status === "selesai")
+      .sort((a, b) => new Date(b.jadwal).getTime() - new Date(a.jadwal).getTime());
+  }, [escortRequestsQuery.data]);
+
+  const handleApproveEscort = async (request: EscortRequest) => {
+    const { isConfirmed } = await Swal.fire({
+      title: "Setujui permintaan?",
+      text: `Setujui pengawalan untuk wilayah ${request.wilayah}?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Ya, setujui",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#047857",
+      cancelButtonColor: "#6B7280",
+    });
+    if (!isConfirmed) return;
+
+    setEscortFeedback(null);
+    setUpdatingEscortId(request.id);
+    try {
+      const result = await bhabinService.updateEscortStatus(request.id, "approved");
+      if (!result) {
+        throw new Error("Permintaan pengawalan tidak ditemukan");
+      }
+      setEscortFeedback({
+        type: "success",
+        message: `Permintaan pengawalan di ${request.wilayah} disetujui.`,
+      });
+      await Swal.fire({
+        title: "Berhasil",
+        text: `Permintaan pengawalan di ${request.wilayah} disetujui.`,
+        icon: "success",
+        confirmButtonText: "Tutup",
+        confirmButtonColor: "#047857",
+      });
+      await escortRequestsQuery.refetch();
+    } catch (error) {
+      console.error("Gagal menyetujui permintaan pengawalan", error);
+      setEscortFeedback({ type: "error", message: "Gagal memperbarui status pengawalan." });
+    } finally {
+      setUpdatingEscortId(null);
+    }
+  };
+
+  const handleReviewEscort = async (request: EscortRequest) => {
+    const { isConfirmed } = await Swal.fire({
+      title: "Tandai penjadwalan?",
+      text: `Tandai permintaan pengawalan ${request.wilayah} untuk penjadwalan?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Ya, tandai",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#2563EB",
+      cancelButtonColor: "#6B7280",
+    });
+    if (!isConfirmed) return;
+
+    setEscortFeedback(null);
+    setUpdatingEscortId(request.id);
+    try {
+      const result = await bhabinService.updateEscortStatus(request.id, "dijadwalkan");
+      if (!result) {
+        throw new Error("Permintaan pengawalan tidak ditemukan");
+      }
+      setEscortFeedback({
+        type: "success",
+        message: `Permintaan pengawalan di ${request.wilayah} ditandai untuk penjadwalan.`,
+      });
+      await Swal.fire({
+        title: "Berhasil",
+        text: `Permintaan pengawalan di ${request.wilayah} ditandai untuk penjadwalan.`,
+        icon: "success",
+        confirmButtonText: "Tutup",
+        confirmButtonColor: "#2563EB",
+      });
+      await escortRequestsQuery.refetch();
+    } catch (error) {
+      console.error("Gagal menandai permintaan pengawalan", error);
+      setEscortFeedback({ type: "error", message: "Gagal memperbarui status pengawalan." });
+    } finally {
+      setUpdatingEscortId(null);
+    }
+  };
 
   const wilayahOptions = useMemo(() => {
+    if (shouldFilterRegion) {
+      return resolvedRegion ? [resolvedRegion] : [];
+    }
+
     const map = new Map<string, string>();
     const push = (value?: string | null) => {
       if (!value) return;
@@ -182,24 +333,42 @@ const AdminSpesialisDashboard = () => {
     recipientsQuery.data?.forEach((item) => push(item.wilayah));
     plantProgressQuery.data?.forEach((item) => push(item.wilayah));
     harvestQuery.data?.forEach((item) => push(item.lokasi));
+    escortRequestsQuery.data?.forEach((item) => push(item.wilayah));
 
     return Array.from(map.values()).sort((a, b) => a.localeCompare(b, "id-ID"));
-  }, [bhabinAccounts, recipientsQuery.data, plantProgressQuery.data, harvestQuery.data]);
+  }, [
+    bhabinAccounts,
+    escortRequestsQuery.data,
+    harvestQuery.data,
+    plantProgressQuery.data,
+    recipientsQuery.data,
+    resolvedRegion,
+    shouldFilterRegion,
+  ]);
 
   const filteredWilayahOptions = useMemo(() => {
+    if (shouldFilterRegion) {
+      return resolvedRegion ? [resolvedRegion] : [];
+    }
     const keyword = wilayahSearch.trim().toLowerCase();
     if (!keyword) return wilayahOptions;
     return wilayahOptions.filter((item) => item.toLowerCase().includes(keyword));
-  }, [wilayahOptions, wilayahSearch]);
+  }, [resolvedRegion, shouldFilterRegion, wilayahOptions, wilayahSearch]);
 
   const filteredTaskWilayahOptions = useMemo(() => {
+    if (shouldFilterRegion) {
+      return resolvedRegion ? [resolvedRegion] : [];
+    }
     const keyword = taskWilayahSearch.trim().toLowerCase();
     if (!keyword) return wilayahOptions;
     return wilayahOptions.filter((item) => item.toLowerCase().includes(keyword));
-  }, [wilayahOptions, taskWilayahSearch]);
+  }, [resolvedRegion, shouldFilterRegion, taskWilayahSearch, wilayahOptions]);
 
   const recipientStats = useMemo(() => {
-    const list: RecipientVerification[] = recipientsQuery.data ?? [];
+    const baseList: RecipientVerification[] = recipientsQuery.data ?? [];
+    const list = shouldFilterRegion
+      ? baseList.filter((item) => (item.wilayah ?? "").trim().toLowerCase() === normalizedRegion)
+      : baseList;
     const verified = list.filter((item) => item.status === "verified");
     const pending = list.filter((item) => item.status === "pending");
     const rejected = list.filter((item) => item.status === "rejected");
@@ -222,10 +391,13 @@ const AdminSpesialisDashboard = () => {
       latestVerifiedAt,
       recentVerified,
     };
-  }, [recipientsQuery.data]);
+  }, [normalizedRegion, recipientsQuery.data, shouldFilterRegion]);
 
   const plantStats = useMemo(() => {
-    const list: PlantConditionReport[] = plantProgressQuery.data ?? [];
+    const baseList: PlantConditionReport[] = plantProgressQuery.data ?? [];
+    const list = shouldFilterRegion
+      ? baseList.filter((item) => item.wilayah.trim().toLowerCase() === normalizedRegion)
+      : baseList;
     const kondisi = {
       baik: 0,
       waspada: 0,
@@ -257,10 +429,13 @@ const AdminSpesialisDashboard = () => {
       fase,
       latestUpdate,
     };
-  }, [plantProgressQuery.data]);
+  }, [normalizedRegion, plantProgressQuery.data, shouldFilterRegion]);
 
   const harvestStats = useMemo(() => {
-    const list: HarvestVerification[] = harvestQuery.data ?? [];
+    const baseList: HarvestVerification[] = harvestQuery.data ?? [];
+    const list = shouldFilterRegion
+      ? baseList.filter((item) => item.lokasi.trim().toLowerCase() === normalizedRegion)
+      : baseList;
 
     const totalArea = list.reduce((sum, item) => sum + (item.luasPanenHa ?? 0), 0);
     const totalYield = list.reduce((sum, item) => sum + (item.produksiTon ?? 0), 0);
@@ -275,7 +450,7 @@ const AdminSpesialisDashboard = () => {
       totalYield,
       latestHarvest,
     };
-  }, [harvestQuery.data]);
+  }, [harvestQuery.data, normalizedRegion, shouldFilterRegion]);
 
   const handleCreateTask = async () => {
     if (!draftTask.title.trim() || !draftTask.region.trim()) {
@@ -312,9 +487,22 @@ const AdminSpesialisDashboard = () => {
         type: "success",
         message: `Tugas "${created.title}" berhasil ditugaskan.`,
       });
-      setDraftTask({ title: "", description: "", region: "", priority: "medium", dueDate: new Date().toISOString().slice(0, 10) });
+      await Swal.fire({
+        title: "Berhasil",
+        text: `Tugas "${created.title}" berhasil ditugaskan.`,
+        icon: "success",
+        confirmButtonText: "Tutup",
+        confirmButtonColor: "#047857",
+      });
+      setDraftTask({
+        title: "",
+        description: "",
+        region: resolvedRegion,
+        priority: "medium",
+        dueDate: new Date().toISOString().slice(0, 10),
+      });
       setIsTaskWilayahDropdownOpen(false);
-      refetch();
+      await refetch();
     } catch (error) {
       console.error("Gagal membuat tugas", error);
       setTaskFeedback({ type: "error", message: "Gagal menyimpan tugas. Coba lagi nanti." });
@@ -324,10 +512,17 @@ const AdminSpesialisDashboard = () => {
   };
 
   const handleClearCache = async () => {
-    const confirmed = window.confirm(
-      "Bersihkan cache aplikasi ini? Service worker, cache offline, dan data lokal akan dihapus lalu halaman dimuat ulang."
-    );
-    if (!confirmed) {
+    const { isConfirmed } = await Swal.fire({
+      title: "Bersihkan cache aplikasi?",
+      text: "Service worker, data offline, dan penyimpanan lokal akan dihapus sebelum memuat ulang.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, bersihkan",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#DC2626",
+      cancelButtonColor: "#6B7280",
+    });
+    if (!isConfirmed) {
       return;
     }
     try {
@@ -339,51 +534,39 @@ const AdminSpesialisDashboard = () => {
         const cacheNames = await caches.keys();
         await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
       }
+      // Sengaja tidak menghapus cache permintaan pengawalan agar status persetujuan tetap tersimpan.
       const STORAGE_KEYS = [
         "sip3s.admin.bhabin.accounts",
         "sip3s.bhabin.recipients",
         "sip3s.bhabin.plant",
         "sip3s.bhabin.harvest",
-        "sip3s.bhabin.escort",
         "sip3s.pendingReports",
       ];
       STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-      alert("Cache aplikasi telah dibersihkan. Halaman akan dimuat ulang.");
+      await Swal.fire({
+        title: "Berhasil",
+        text: "Cache aplikasi telah dibersihkan. Halaman akan dimuat ulang.",
+        icon: "success",
+        confirmButtonText: "Muat ulang",
+        confirmButtonColor: "#047857",
+      });
       window.location.reload();
     } catch (error) {
       console.error("Failed to clear cache", error);
-      alert("Gagal membersihkan cache. Harap bersihkan cache browser secara manual.");
+      await Swal.fire({
+        title: "Gagal",
+        text: "Tidak dapat membersihkan cache. Silakan bersihkan secara manual.",
+        icon: "error",
+        confirmButtonText: "Tutup",
+        confirmButtonColor: "#DC2626",
+      });
     }
   }
 
-  const handleTaskStatusChange = async (task: Task, status: TaskStatus) => {
-    setTaskFeedback(null);
-    setUpdatingTaskId(task.id);
-    try {
-      const updated = await taskService.updateStatus(task.id, status);
-      if (!updated) {
-        throw new Error("Tugas tidak ditemukan");
-      }
-      setTaskFeedback({
-        type: "success",
-        message: status === "selesai"
-          ? `Tugas "${task.title}" disetujui.`
-          : `Tugas "${task.title}" ditandai untuk ditinjau.`,
-      });
-      refetch();
-    } catch (error) {
-      console.error("Gagal memperbarui status tugas", error);
-      setTaskFeedback({ type: "error", message: "Gagal memperbarui status tugas." });
-    } finally {
-      setUpdatingTaskId(null);
-    }
-  };
-
-;
 
   const openCreateAccountModal = () => {
     setEditingAccount(null);
-    setAccountForm(createEmptyAccountForm());
+    setAccountForm(createEmptyAccountForm(resolvedRegion));
     setAccountModalAlert(null);
     setAccountModalOpen(true);
   };
@@ -425,14 +608,28 @@ const AdminSpesialisDashboard = () => {
       if (editingAccount) {
         await adminBhabinService.update(editingAccount.id, payload);
         setAccountAlert({ type: "success", message: "Data akun berhasil diperbarui." });
+        await Swal.fire({
+          title: "Berhasil",
+          text: "Data akun berhasil diperbarui.",
+          icon: "success",
+          confirmButtonText: "Tutup",
+          confirmButtonColor: "#047857",
+        });
       } else {
         await adminBhabinService.create(payload);
         setAccountAlert({ type: "success", message: "Akun baru berhasil ditambahkan." });
+        await Swal.fire({
+          title: "Berhasil",
+          text: "Akun baru berhasil ditambahkan.",
+          icon: "success",
+          confirmButtonText: "Tutup",
+          confirmButtonColor: "#047857",
+        });
       }
       await refetchAccounts();
       setAccountModalOpen(false);
       setEditingAccount(null);
-      setAccountForm(createEmptyAccountForm());
+      setAccountForm(createEmptyAccountForm(resolvedRegion));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Gagal menyimpan akun.";
       setAccountModalAlert({ type: "error", message });
@@ -442,11 +639,18 @@ const AdminSpesialisDashboard = () => {
   };
 
   const handleDeleteAccount = async (account: BhabinAccount) => {
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm(`Hapus akun ${account.nama}?`);
-      if (!confirmed) {
-        return;
-      }
+    const { isConfirmed } = await Swal.fire({
+      title: "Hapus akun?",
+      text: `Akun ${account.nama} akan dihapus permanen.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#DC2626",
+      cancelButtonColor: "#6B7280",
+    });
+    if (!isConfirmed) {
+      return;
     }
     setDeletingAccountId(account.id);
     setAccountAlert(null);
@@ -454,6 +658,13 @@ const AdminSpesialisDashboard = () => {
       await adminBhabinService.remove(account.id);
       await refetchAccounts();
       setAccountAlert({ type: "success", message: "Akun berhasil dihapus." });
+      await Swal.fire({
+        title: "Berhasil",
+        text: `Akun ${account.nama} berhasil dihapus.`,
+        icon: "success",
+        confirmButtonText: "Tutup",
+        confirmButtonColor: "#047857",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Gagal menghapus akun.";
       setAccountAlert({ type: "error", message });
@@ -488,7 +699,7 @@ const AdminSpesialisDashboard = () => {
 
       <Tabs value={activePanel} onValueChange={(value) => setActivePanel(value as AdminPanelKey)} className="flex flex-col gap-6">
         <TabsList className="w-full max-w-xl self-start rounded-2xl bg-white/80 p-1">
-          <TabsTrigger value="tasks" className="flex-1">Koordinasi Tugas</TabsTrigger>
+          <TabsTrigger value="tasks" className="flex-1">Koordinasi Tugas & Laporan</TabsTrigger>
           <TabsTrigger value="accounts" className="flex-1">Akun Bhabinkamtibmas</TabsTrigger>
         </TabsList>
 
@@ -651,42 +862,75 @@ const AdminSpesialisDashboard = () => {
           <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
             <Card className="bg-white">
               <CardHeader>
-                <CardTitle>Antrian Laporan</CardTitle>
-                <CardDescription>Verifikasi dan beri keputusan</CardDescription>
+                <CardTitle>Permintaan Pengawalan</CardTitle>
+                <CardDescription>Koordinasikan dukungan personel bersama Bhabinkamtibmas.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {queueTasks.slice(0, 3).map((task) => (
-                  <div key={task.id} className="flex flex-col gap-2 rounded-2xl border border-abu-kartu p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Badge className={priorityColor[task.priority]}>{task.priority.toUpperCase()}</Badge>
-                      <Badge variant="neutral">Batas {new Date(task.dueDate).toLocaleDateString("id-ID")}</Badge>
+                {escortFeedback && (
+                  <Alert variant={escortFeedback.type === "success" ? "success" : "error"}>
+                    {escortFeedback.message}
+                  </Alert>
+                )}
+                {escortRequestsQuery.isLoading ? (
+                  <p className="text-sm text-slate-netral">Memuat permintaan pengawalan…</p>
+                ) : pendingEscortRequests.length > 0 ? (
+                  pendingEscortRequests.slice(0, 3).map((request) => (
+                    <div key={request.id} className="flex flex-col gap-3 rounded-2xl border border-abu-kartu p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-teks-gelap">
+                          <MapPin className="h-4 w-4 text-biru-pemerintah" weight="bold" />
+                          <span>{request.wilayah}</span>
+                        </div>
+                        <Badge variant={escortStatusMeta[request.status].variant}>
+                          {escortStatusMeta[request.status].label}
+                        </Badge>
+                      </div>
+                      <div className="grid gap-2 text-xs text-slate-netral sm:grid-cols-2">
+                        <div className="flex items-center gap-2">
+                          <CalendarBlank className="h-4 w-4 text-biru-pemerintah" weight="bold" />
+                          <span>{formatEscortDateTime(request.jadwal)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <UsersThree className="h-4 w-4 text-hijau-hutan" weight="bold" />
+                          <span>{request.estimasiPeserta} peserta</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Shield className="h-4 w-4 text-oranye-hangat" weight="bold" />
+                          <span>{request.kebutuhanPersonel} personel</span>
+                        </div>
+                        <div className="flex items-center gap-2 sm:col-span-2">
+                          <span className="font-medium text-teks-gelap">Titik kumpul:</span>
+                          <span>{request.titikKumpul}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-netral">
+                        <span>Diajukan: {formatEscortDateTime(request.diajukanAt)}</span>
+                        <span>Oleh: {request.diajukanOleh}</span>
+                      </div>
+                      {request.catatan && <p className="text-xs text-slate-netral">Catatan: {request.catatan}</p>}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={updatingEscortId === request.id || request.status === "approved"}
+                          onClick={() => handleApproveEscort(request)}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={updatingEscortId === request.id || request.status !== "baru"}
+                          onClick={() => handleReviewEscort(request)}
+                        >
+                          Review
+                        </Button>
+                      </div>
                     </div>
-                    <p className="text-lg font-semibold text-teks-gelap">{task.title}</p>
-                    <p className="text-sm text-slate-netral">{task.description}</p>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-netral">
-                      <Tag className="h-4 w-4 text-hijau-hutan" /> {task.region}
-                    </div>
-                    <div className="flex gap-3">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={updatingTaskId === task.id}
-                        onClick={() => handleTaskStatusChange(task, "selesai")}
-                      >
-                        <PaperPlaneTilt className="mr-2 h-4 w-4" weight="bold" /> Approve
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={updatingTaskId === task.id}
-                        onClick={() => handleTaskStatusChange(task, "proses")}
-                      >
-                        Review
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {queueTasks.length === 0 && <p className="text-sm text-slate-netral">Belum ada laporan masuk.</p>}
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-netral">Belum ada permintaan pengawalan yang menunggu.</p>
+                )}
               </CardContent>
             </Card>
 
@@ -724,50 +968,56 @@ const AdminSpesialisDashboard = () => {
                       </label>
                       <label className="flex flex-col gap-1">
                         Wilayah
-                        <div ref={taskWilayahDropdownRef} className="relative">
-                          <button
-                            type="button"
-                            className="flex w-full items-center justify-between rounded-2xl border border-abu-kartu px-3 py-2 text-left text-sm transition hover:border-biru-pemerintah/40"
-                            onClick={() => setIsTaskWilayahDropdownOpen((prev) => !prev)}
-                          >
-                            <span className={draftTask.region ? "text-teks-gelap" : "text-slate-netral"}>
-                              {draftTask.region || "Pilih kelurahan/desa"}
-                            </span>
-                            <CaretDown className={`h-4 w-4 text-slate-netral transition ${isTaskWilayahDropdownOpen ? "rotate-180" : ""}`} />
-                          </button>
-                          {isTaskWilayahDropdownOpen && (
-                            <div className="absolute z-20 mt-2 w-full rounded-2xl border border-abu-kartu bg-white shadow-lg">
-                              <div className="border-b border-abu-kartu px-3 py-2">
-                                <input
-                                  autoFocus
-                                  value={taskWilayahSearch}
-                                  onChange={(event) => setTaskWilayahSearch(event.target.value)}
-                                  placeholder="Cari kelurahan/desa"
-                                  className="w-full rounded-xl border border-abu-kartu px-3 py-2 text-sm outline-none focus:border-biru-pemerintah"
-                                />
+                        {shouldFilterRegion ? (
+                          <div className="rounded-2xl border border-abu-kartu bg-abu-kartu/40 px-3 py-2 text-sm text-teks-gelap">
+                            {resolvedRegion || "-"}
+                          </div>
+                        ) : (
+                          <div ref={taskWilayahDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between rounded-2xl border border-abu-kartu px-3 py-2 text-left text-sm transition hover:border-biru-pemerintah/40"
+                              onClick={() => setIsTaskWilayahDropdownOpen((prev) => !prev)}
+                            >
+                              <span className={draftTask.region ? "text-teks-gelap" : "text-slate-netral"}>
+                                {draftTask.region || "Pilih kelurahan/desa"}
+                              </span>
+                              <CaretDown className={`h-4 w-4 text-slate-netral transition ${isTaskWilayahDropdownOpen ? "rotate-180" : ""}`} />
+                            </button>
+                            {isTaskWilayahDropdownOpen && (
+                              <div className="absolute z-20 mt-2 w-full rounded-2xl border border-abu-kartu bg-white shadow-lg">
+                                <div className="border-b border-abu-kartu px-3 py-2">
+                                  <input
+                                    autoFocus
+                                    value={taskWilayahSearch}
+                                    onChange={(event) => setTaskWilayahSearch(event.target.value)}
+                                    placeholder="Cari kelurahan/desa"
+                                    className="w-full rounded-xl border border-abu-kartu px-3 py-2 text-sm outline-none focus:border-biru-pemerintah"
+                                  />
+                                </div>
+                                <div className="max-h-48 overflow-y-auto py-1">
+                                  {filteredTaskWilayahOptions.length > 0 ? (
+                                    filteredTaskWilayahOptions.map((option) => (
+                                      <button
+                                        key={option}
+                                        type="button"
+                                        className="w-full px-3 py-2 text-left text-sm text-slate-netral hover:bg-biru-pemerintah/10"
+                                        onClick={() => {
+                                          setDraftTask((prev) => ({ ...prev, region: option }));
+                                          setIsTaskWilayahDropdownOpen(false);
+                                        }}
+                                      >
+                                        {option}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <p className="px-3 py-2 text-xs text-slate-netral">Wilayah tidak ditemukan.</p>
+                                  )}
+                                </div>
                               </div>
-                              <div className="max-h-48 overflow-y-auto py-1">
-                                {filteredTaskWilayahOptions.length > 0 ? (
-                                  filteredTaskWilayahOptions.map((option) => (
-                                    <button
-                                      key={option}
-                                      type="button"
-                                      className="w-full px-3 py-2 text-left text-sm text-slate-netral hover:bg-biru-pemerintah/10"
-                                      onClick={() => {
-                                        setDraftTask((prev) => ({ ...prev, region: option }));
-                                        setIsTaskWilayahDropdownOpen(false);
-                                      }}
-                                    >
-                                      {option}
-                                    </button>
-                                  ))
-                                ) : (
-                                  <p className="px-3 py-2 text-xs text-slate-netral">Wilayah tidak ditemukan.</p>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        )}
                       </label>
                       <label className="flex flex-col gap-1">
                         Prioritas
@@ -855,8 +1105,65 @@ const AdminSpesialisDashboard = () => {
             </CardContent>
             <CardFooter className="justify-end text-xs text-slate-netral">Diurutkan berdasarkan prioritas & pembaruan terbaru</CardFooter>
           </Card>
+
+          <Card className="bg-white">
+            <CardHeader className="space-y-2">
+              <CardTitle>Permintaan Pengawalan Selesai</CardTitle>
+              <CardDescription>Rekap pengawalan yang sudah disetujui atau ditutup.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {escortRequestsQuery.isLoading ? (
+                <p className="text-sm text-slate-netral">Memuat riwayat pengawalan…</p>
+              ) : completedEscortRequests.length > 0 ? (
+                completedEscortRequests.slice(0, 6).map((request) => (
+                  <div key={request.id} className="flex flex-col gap-2 rounded-2xl border border-abu-kartu p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-teks-gelap">
+                        <MapPin className="h-4 w-4 text-biru-pemerintah" weight="bold" />
+                        <span>{request.wilayah}</span>
+                      </div>
+                      <Badge variant={escortStatusMeta[request.status].variant}>
+                        {escortStatusMeta[request.status].label}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-2 text-xs text-slate-netral sm:grid-cols-2">
+                      <div className="flex items-center gap-2">
+                        <CalendarBlank className="h-4 w-4 text-biru-pemerintah" weight="bold" />
+                        <span>{formatEscortDateTime(request.jadwal)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <UsersThree className="h-4 w-4 text-hijau-hutan" weight="bold" />
+                        <span>{request.estimasiPeserta} peserta</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-oranye-hangat" weight="bold" />
+                        <span>{request.kebutuhanPersonel} personel</span>
+                      </div>
+                      <div className="flex items-center gap-2 sm:col-span-2">
+                        <span className="font-medium text-teks-gelap">Titik kumpul:</span>
+                        <span>{request.titikKumpul}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-netral">
+                      <span>Diajukan: {formatEscortDateTime(request.diajukanAt)}</span>
+                      <span>Oleh: {request.diajukanOleh}</span>
+                    </div>
+                    {request.catatan && <p className="text-xs text-slate-netral">Catatan: {request.catatan}</p>}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-netral">Belum ada permintaan pengawalan yang selesai.</p>
+              )}
+            </CardContent>
+            {completedEscortRequests.length > 6 && (
+              <CardFooter className="justify-end text-xs text-slate-netral">
+                Menampilkan {completedEscortRequests.length} permintaan terakhir
+              </CardFooter>
+            )}
+          </Card>
         </TabsContent>
 
+        {/*
         <TabsContent value="accounts" className="space-y-4">
           <Card className="bg-white">
             <CardHeader className="space-y-3">
@@ -945,7 +1252,7 @@ const AdminSpesialisDashboard = () => {
               if (!open) {
                 setEditingAccount(null);
                 setAccountModalAlert(null);
-                setAccountForm(createEmptyAccountForm());
+                setAccountForm(createEmptyAccountForm(resolvedRegion));
               }
             }}
           >
@@ -1078,11 +1385,10 @@ const AdminSpesialisDashboard = () => {
             </DialogContent>
           </Dialog>
         </TabsContent>
+        */}
       </Tabs>
     </main>
   );
 };
 
 export default AdminSpesialisDashboard;
-
-

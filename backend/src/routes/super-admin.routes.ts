@@ -1,0 +1,64 @@
+import { Router } from "express";
+
+import {
+  createSuperAdminAccountController,
+  createSuperAdminEscortController,
+  createSuperAdminHarvestController,
+  createSuperAdminPlantReportController,
+  createSuperAdminTaskController,
+  deleteSuperAdminAccountController,
+  deleteSuperAdminEscortController,
+  deleteSuperAdminHarvestController,
+  deleteSuperAdminPlantReportController,
+  deleteSuperAdminTaskController,
+  getSuperAdminOverviewController,
+  listSuperAdminAccountsController,
+  listSuperAdminEscortController,
+  listSuperAdminHarvestController,
+  listSuperAdminPlantReportsController,
+  listSuperAdminRecipientsController,
+  listSuperAdminTasksController,
+  updateSuperAdminAccountController,
+  updateSuperAdminEscortController,
+  updateSuperAdminHarvestController,
+  updateSuperAdminPlantReportController,
+  updateSuperAdminRecipientController,
+  updateSuperAdminTaskController,
+  updateSuperAdminTaskStatusController,
+} from "@/controllers/super-admin-controller";
+
+const router = Router();
+
+router.get("/overview", getSuperAdminOverviewController);
+
+router.get("/tasks", listSuperAdminTasksController);
+router.post("/tasks", createSuperAdminTaskController);
+router.put("/tasks/:id", updateSuperAdminTaskController);
+router.patch("/tasks/:id/status", updateSuperAdminTaskStatusController);
+router.delete("/tasks/:id", deleteSuperAdminTaskController);
+
+router.get("/recipients", listSuperAdminRecipientsController);
+router.patch("/recipients/:id", updateSuperAdminRecipientController);
+
+router.get("/plant-reports", listSuperAdminPlantReportsController);
+router.post("/plant-reports", createSuperAdminPlantReportController);
+router.put("/plant-reports/:id", updateSuperAdminPlantReportController);
+router.delete("/plant-reports/:id", deleteSuperAdminPlantReportController);
+
+router.get("/harvests", listSuperAdminHarvestController);
+router.post("/harvests", createSuperAdminHarvestController);
+router.put("/harvests/:id", updateSuperAdminHarvestController);
+router.delete("/harvests/:id", deleteSuperAdminHarvestController);
+
+router.get("/escort-requests", listSuperAdminEscortController);
+router.post("/escort-requests", createSuperAdminEscortController);
+router.put("/escort-requests/:id", updateSuperAdminEscortController);
+router.delete("/escort-requests/:id", deleteSuperAdminEscortController);
+
+router.get("/accounts", listSuperAdminAccountsController);
+router.post("/accounts", createSuperAdminAccountController);
+router.put("/accounts/:id", updateSuperAdminAccountController);
+router.delete("/accounts/:id", deleteSuperAdminAccountController);
+
+export const superAdminRoutes = router;
+
