@@ -133,6 +133,7 @@ export const RecipientManager: React.FC = () => {
     }
 
     const payload: SuperAdminRecipientUpdatePayload = {
+      id: selected.id,
       status: form.status,
       notes: form.notes.trim() || undefined,
       productType: form.productType || undefined,

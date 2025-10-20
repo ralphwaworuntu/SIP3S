@@ -1,9 +1,25 @@
-﻿export type VerificationStatus = "pending" | "verified" | "rejected";
+export type BhabinStatus = "active" | "inactive";
 
-export interface GeoPoint {
-  latitude: number;
-  longitude: number;
-  alamat: string;
+export interface BhabinAccount {
+  id: string;
+  nama: string;
+  email: string;
+  agency?: string;
+  wilayah?: string;
+  phone?: string;
+  status: BhabinStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BhabinAccountPayload {
+  nama: string;
+  email: string;
+  agency?: string;
+  wilayah?: string;
+  phone?: string;
+  password?: string;
+  status?: BhabinStatus;
 }
 
 export interface BhabinAssignment {
@@ -16,6 +32,14 @@ export interface BhabinAssignment {
   pplEmail?: string;
 }
 
+export type VerificationStatus = "pending" | "verified" | "rejected";
+
+export interface GeoPoint {
+  latitude: number;
+  longitude: number;
+  alamat: string;
+}
+
 export interface RecipientVerification {
   id: string;
   nik: string;
@@ -26,6 +50,19 @@ export interface RecipientVerification {
   jadwalDistribusi: string;
   status: VerificationStatus;
   verifiedAt?: string;
+  notes?: string;
+  lokasi?: GeoPoint;
+  fotoEvidence?: string;
+  productType?: "benih" | "pupuk";
+  seedType?: string;
+  seedQuantityKg?: number;
+  pupukNpkKg?: number;
+  pupukUreaKg?: number;
+}
+
+export interface RecipientVerificationPayload {
+  id: string;
+  status?: VerificationStatus;
   notes?: string;
   lokasi?: GeoPoint;
   fotoEvidence?: string;
@@ -51,45 +88,7 @@ export interface PlantConditionReport {
   pupukDigunakanKg?: number;
   luasLahanBersihM2?: number;
   bibitDitanamKg?: number;
-}
-
-export interface HarvestVerification {
-  id: string;
-  petani: string;
-  komoditas: string;
-  luasPanenHa: number;
-  produksiTon: number;
-  lokasi: string;
-  diverifikasiAt: string;
-  keterangan?: string;
-  koordinat?: GeoPoint;
-  fotoEvidence?: string;
   productType?: "benih" | "pupuk";
-  seedType?: string;
-  seedQuantityKg?: number;
-  pupukNpkKg?: number;
-  pupukUreaKg?: number;
-}
-
-export interface EscortRequest {
-  id: string;
-  wilayah: string;
-  jadwal: string;
-  titikKumpul: string;
-  estimasiPeserta: number;
-  kebutuhanPersonel: number;
-  status: "baru" | "dijadwalkan" | "selesai" | "approved";
-  catatan?: string;
-  diajukanOleh: string;
-  diajukanAt: string;
-}
-
-export interface VerifyRecipientPayload {
-  id: string;
-  notes?: string;
-  lokasi: GeoPoint;
-  fotoEvidence: string;
-  productType: "benih" | "pupuk";
   seedType?: string;
   seedQuantityKg?: number;
   pupukNpkKg?: number;
@@ -115,6 +114,24 @@ export interface PlantConditionPayload {
   pupukUreaKg?: number;
 }
 
+export interface HarvestVerification {
+  id: string;
+  petani: string;
+  komoditas: string;
+  luasPanenHa: number;
+  produksiTon: number;
+  lokasi: string;
+  diverifikasiAt: string;
+  keterangan?: string;
+  koordinat?: GeoPoint;
+  fotoEvidence?: string;
+  productType?: "benih" | "pupuk";
+  seedType?: string;
+  seedQuantityKg?: number;
+  pupukNpkKg?: number;
+  pupukUreaKg?: number;
+}
+
 export interface HarvestVerificationPayload {
   petani: string;
   komoditas: string;
@@ -131,6 +148,21 @@ export interface HarvestVerificationPayload {
   pupukUreaKg?: number;
 }
 
+export type EscortStatus = "baru" | "dijadwalkan" | "selesai" | "approved";
+
+export interface EscortRequest {
+  id: string;
+  wilayah: string;
+  jadwal: string;
+  titikKumpul: string;
+  estimasiPeserta: number;
+  kebutuhanPersonel: number;
+  status: EscortStatus;
+  catatan?: string;
+  diajukanOleh: string;
+  diajukanAt: string;
+}
+
 export interface EscortRequestPayload {
   wilayah: string;
   jadwal: string;
@@ -141,27 +173,9 @@ export interface EscortRequestPayload {
   diajukanOleh: string;
 }
 
-
-export type BhabinAccountStatus = "active" | "inactive";
-
-export interface BhabinAccount {
+export interface VerifyRecipientPayload extends RecipientVerificationPayload {
   id: string;
-  nama: string;
-  email: string;
-  agency?: string;
-  wilayah?: string;
-  phone?: string;
-  status: BhabinAccountStatus;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface BhabinAccountPayload {
-  nama: string;
-  email: string;
-  agency?: string;
-  wilayah?: string;
-  phone?: string;
-  password?: string;
-  status?: BhabinAccountStatus;
+  lokasi: GeoPoint;
+  fotoEvidence: string;
+  productType: "benih" | "pupuk";
 }

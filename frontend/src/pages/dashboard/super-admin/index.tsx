@@ -136,63 +136,34 @@ const SuperAdminDashboard = () => {
   >(() => [
 
     {
-
       label: "Kelola Tugas & Akun Bhabin",
-
       description: "Tambahkan atau revisi tugas lapangan serta kelola akun Bhabinkamtibmas lintas wilayah.",
-
       route: ROUTES.adminSpesialis,
-
-      Icon: ClipboardText,
-
+      Icon: (props) => <ClipboardText {...props} />,
     },
-
     {
-
       label: "Verifikasi Penyaluran",
-
       description: "Validasi penerima bantuan, unggah bukti, dan sinkronkan penyaluran seluruh kabupaten.",
-
       route: `${ROUTES.bhabinkamtibmas}/verifikasi`,
-
-      Icon: CheckCircle,
-
+      Icon: (props) => <CheckCircle {...props} />,
     },
-
     {
-
       label: "Perkembangan Tanaman",
-
       description: "Pantau progres budidaya, catatan hama, dan dukungan lapangan dari semua kawasan.",
-
       route: `${ROUTES.bhabinkamtibmas}/tanaman`,
-
-      Icon: Leaf,
-
+      Icon: (props) => <Leaf {...props} />,
     },
-
     {
-
       label: "Verifikasi Hasil Panen",
-
       description: "Konfirmasi hasil panen, dukung logistik gudang, dan tindak lanjut kebutuhan petani.",
-
       route: `${ROUTES.bhabinkamtibmas}/panen`,
-
-      Icon: ShieldCheck,
-
+      Icon: (props) => <ShieldCheck {...props} />,
     },
-
     {
-
       label: "Permintaan Pengawalan",
-
       description: "Atur permintaan kawalan panen, distribusi logistik, serta status penjadwalan Polres.",
-
       route: `${ROUTES.bhabinkamtibmas}/pengawalan`,
-
-      Icon: UsersThree,
-
+      Icon: (props) => <UsersThree {...props} />,
     },
 
   ], []);

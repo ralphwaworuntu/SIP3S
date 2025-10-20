@@ -1,0 +1,2 @@
+import{j as n,m as s,w as r}from"./index-CHgft2lY.js";const i=r("inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",{variants:{variant:{default:"bg-biru-pemerintah/10 text-biru-pemerintah",success:"bg-hijau-hutan/10 text-hijau-hutan",warning:"bg-oranye-hangat/10 text-oranye-hangat",neutral:"bg-slate-netral/20 text-teks-gelap"}},defaultVariants:{variant:"default"}}),l=({className:a,variant:t,...e})=>n.jsx("span",{className:s(i({variant:t}),a),...e});export{l as B};
+//# sourceMappingURL=badge-1jXCihSW.js.map

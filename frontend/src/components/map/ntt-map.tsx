@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
-import type { CircleMarkerOptions, LatLngBoundsExpression, LatLngTuple } from "leaflet";
+import type { CircleMarkerOptions, LatLngBoundsLiteral, LatLngTuple } from "leaflet";
 import L from "leaflet";
 
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,12 @@ import { mockNttMonitoring, mockReports } from "@/utils/mock-data";
 type RegionMonitoring = (typeof mockNttMonitoring)[number];
 type ReportItem = (typeof mockReports)[number];
 
-const FALLBACK_BOUNDS: LatLngBoundsExpression = [
+const monitoringData: RegionMonitoring[] = [...mockNttMonitoring];
+const reportData: ReportItem[] = [...mockReports];
+
+type BoundsLiteral = LatLngBoundsLiteral;
+
+const FALLBACK_BOUNDS: BoundsLiteral = [
   [-11.5, 118.0],
   [-7.0, 127.0],
 ];
@@ -42,10 +47,10 @@ const statusStyles: Record<
   },
 };
 
-const reportStatusStyles: Record<
-  ReportItem["status"],
-  { color: string; label: string; badge: "success" | "warning" | "neutral" }
-> = {
+const AVAILABLE_REPORT_STATUSES = ["terkirim", "pending", "gagal"] as const;
+type ReportStatus = (typeof AVAILABLE_REPORT_STATUSES)[number];
+
+const reportStatusStyles: Record<ReportStatus, { color: string; label: string; badge: "success" | "warning" | "neutral" }> = {
   terkirim: {
     color: "#16a34a",
     label: "Tersinkron",
@@ -54,6 +59,11 @@ const reportStatusStyles: Record<
   pending: {
     color: "#f59e0b",
     label: "Menunggu",
+    badge: "warning",
+  },
+  gagal: {
+    color: "#ef4444",
+    label: "Gagal kirim",
     badge: "warning",
   },
 };
@@ -70,10 +80,17 @@ const reportLegend = Object.entries(reportStatusStyles).map(([key, meta]) => ({
   color: meta.color,
 }));
 
-const computeBounds = (): LatLngBoundsExpression => {
-  if (mockNttMonitoring.length === 0) return FALLBACK_BOUNDS;
-  const latitudes = mockNttMonitoring.map((region) => region.latitude);
-  const longitudes = mockNttMonitoring.map((region) => region.longitude);
+const normalizeReportStatus = (status: ReportItem["status"]): ReportStatus => {
+  if (typeof status === "string" && AVAILABLE_REPORT_STATUSES.includes(status as ReportStatus)) {
+    return status as ReportStatus;
+  }
+  return "pending";
+};
+
+const computeBounds = (): BoundsLiteral => {
+  if (monitoringData.length === 0) return FALLBACK_BOUNDS;
+  const latitudes = monitoringData.map((region) => region.latitude);
+  const longitudes = monitoringData.map((region) => region.longitude);
 
   const minLat = Math.min(...latitudes);
   const maxLat = Math.max(...latitudes);
@@ -88,15 +105,13 @@ const computeBounds = (): LatLngBoundsExpression => {
   ];
 };
 
-const computeCenter = (): LatLngTuple => {
-  if (mockNttMonitoring.length === 0) return [-9.5, 123.8];
-  const bounds = computeBounds() as [[number, number], [number, number]];
+const computeCenter = (bounds: BoundsLiteral): LatLngTuple => {
   const southWest = bounds[0];
   const northEast = bounds[1];
   return [(southWest[0] + northEast[0]) / 2, (southWest[1] + northEast[1]) / 2];
 };
 
-const ConstrainView: React.FC<{ bounds: LatLngBoundsExpression }> = ({ bounds }) => {
+const ConstrainView: React.FC<{ bounds: BoundsLiteral }> = ({ bounds }) => {
   const map = useMap();
 
   useEffect(() => {
@@ -109,7 +124,7 @@ const ConstrainView: React.FC<{ bounds: LatLngBoundsExpression }> = ({ bounds })
 };
 
 export const NttMapWidget: React.FC = () => {
-  const [activeRegionId, setActiveRegionId] = useState<string>(mockNttMonitoring[0]?.id ?? "");
+  const [activeRegionId, setActiveRegionId] = useState<string>(monitoringData[0]?.id ?? "");
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -129,11 +144,14 @@ export const NttMapWidget: React.FC = () => {
     });
   }, [isClient]);
 
-  const bounds = useMemo<LatLngBoundsExpression>(() => computeBounds(), []);
-  const center = useMemo<LatLngTuple>(() => computeCenter(), []);
+  const bounds = useMemo<BoundsLiteral>(() => computeBounds(), []);
+  const center = useMemo<LatLngTuple>(
+    () => (monitoringData.length === 0 ? [-9.5, 123.8] : computeCenter(bounds)),
+    [bounds]
+  );
 
   const activeRegion = useMemo<RegionMonitoring | undefined>(
-    () => mockNttMonitoring.find((region) => region.id === activeRegionId) ?? mockNttMonitoring[0],
+    () => monitoringData.find((region) => region.id === activeRegionId) ?? monitoringData[0],
     [activeRegionId]
   );
 
@@ -150,7 +168,8 @@ export const NttMapWidget: React.FC = () => {
     if (!activeRegion) return [];
     const regionName = activeRegion.name.toLowerCase();
     const regionShort = activeRegion.shortLabel.toLowerCase();
-    return mockReports.filter((report) => {
+    return reportData.filter((report) => {
+      if (!report.lokasi) return false;
       const address = report.lokasi.alamat.toLowerCase();
       return address.includes(regionName) || address.includes(regionShort);
     });
@@ -173,7 +192,7 @@ export const NttMapWidget: React.FC = () => {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> kontributor'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {mockNttMonitoring.map((region) => {
+            {monitoringData.map((region) => {
               const styles = statusStyles[region.status];
               const isActive = region.id === activeRegionId;
               const markerRadius = Math.max(8, Math.min(16, region.progress / 5));
@@ -215,8 +234,10 @@ export const NttMapWidget: React.FC = () => {
               );
             })}
 
-            {mockReports.map((report) => {
-              const style = reportStatusStyles[report.status] ?? reportStatusStyles.pending;
+            {reportData.map((report) => {
+              if (!report.lokasi) return null;
+              const status = normalizeReportStatus(report.status);
+              const style = reportStatusStyles[status];
               return (
                 <CircleMarker
                   key={report.id}
@@ -319,18 +340,19 @@ export const NttMapWidget: React.FC = () => {
               </p>
               {associatedReports.length > 0 ? (
                 <ul className="space-y-2 text-xs">
-                  {associatedReports.slice(0, 3).map((report) => (
-                    <li key={report.id} className="flex flex-col gap-1 rounded-2xl border border-abu-kartu/70 bg-abu-kartu/20 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-teks-gelap">{report.komoditas}</span>
-                        <Badge variant={reportStatusStyles[report.status]?.badge ?? "neutral"}>
-                          {reportStatusStyles[report.status]?.label ?? report.status}
-                        </Badge>
-                      </div>
-                      <p className="text-slate-netral">{report.lokasi.alamat}</p>
-                      <p className="text-slate-netral">Penyaluran {report.kuotaTersalurkan}%</p>
-                    </li>
-                  ))}
+                  {associatedReports.slice(0, 3).map((report) => {
+                    const status = normalizeReportStatus(report.status);
+                    return (
+                      <li key={report.id} className="flex flex-col gap-1 rounded-2xl border border-abu-kartu/70 bg-abu-kartu/20 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-teks-gelap">{report.komoditas}</span>
+                          <Badge variant={reportStatusStyles[status].badge}>{reportStatusStyles[status].label}</Badge>
+                        </div>
+                        <p className="text-slate-netral">{report.lokasi.alamat}</p>
+                        <p className="text-slate-netral">Penyaluran {report.kuotaTersalurkan}%</p>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="text-xs text-slate-netral">Belum ada laporan terkait wilayah ini.</p>
@@ -346,4 +368,3 @@ export const NttMapWidget: React.FC = () => {
     </div>
   );
 };
-

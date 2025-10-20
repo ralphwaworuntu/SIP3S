@@ -1,0 +1,2 @@
+import{r as i,j as r,m as l}from"./index-CHgft2lY.js";const o=i.forwardRef(({value:a,className:s,...e},t)=>r.jsx("div",{ref:t,className:l("relative h-3 w-full overflow-hidden rounded-full bg-abu-kartu",s),...e,children:r.jsx("div",{className:"h-full rounded-full bg-biru-pemerintah transition-[width] duration-500",style:{width:`${Math.min(100,Math.max(0,a))}%`}})}));o.displayName="Progress";export{o as P};
+//# sourceMappingURL=progress-BQxq5zOm.js.map
