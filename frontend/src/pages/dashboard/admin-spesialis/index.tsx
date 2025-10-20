@@ -1163,7 +1163,6 @@ const AdminSpesialisDashboard: React.FC<AdminSpesialisDashboardProps> = ({ force
           </Card>
         </TabsContent>
 
-        {/*
         <TabsContent value="accounts" className="space-y-4">
           <Card className="bg-white">
             <CardHeader className="space-y-3">
@@ -1385,7 +1384,6 @@ const AdminSpesialisDashboard: React.FC<AdminSpesialisDashboardProps> = ({ force
             </DialogContent>
           </Dialog>
         </TabsContent>
-        */}
       </Tabs>
     </main>
   );

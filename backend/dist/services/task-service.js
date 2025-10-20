@@ -95,4 +95,54 @@ export class TaskService {
         }
         return null;
     }
+    async update(task) {
+        const useDatabase = await pingDatabase();
+        const updatedAt = new Date().toISOString();
+        const data = {
+            ...task,
+            updatedAt,
+        };
+        if (useDatabase) {
+            try {
+                const pool = getPool();
+                await pool.query("UPDATE tasks SET region = ?, due_date = ?, priority = ?, status = ?, title = ?, description = ?, assigned_to = ?, updated_at = ? WHERE id = ?", [
+                    data.region,
+                    data.dueDate,
+                    data.priority,
+                    data.status,
+                    data.title,
+                    data.description,
+                    data.assignedTo.join(","),
+                    data.updatedAt,
+                    data.id,
+                ]);
+                return data;
+            }
+            catch (error) {
+                logger.error({ err: error }, "Gagal memperbarui tugas");
+            }
+        }
+        const index = mockTasks.findIndex((item) => item.id === data.id);
+        if (index !== -1) {
+            mockTasks[index] = data;
+            return data;
+        }
+        return null;
+    }
+    async remove(id) {
+        const useDatabase = await pingDatabase();
+        if (useDatabase) {
+            try {
+                const pool = getPool();
+                await pool.query("DELETE FROM tasks WHERE id = ?", [id]);
+            }
+            catch (error) {
+                logger.error({ err: error }, "Gagal menghapus tugas");
+            }
+        }
+        const index = mockTasks.findIndex((task) => task.id === id);
+        if (index !== -1) {
+            mockTasks.splice(index, 1);
+        }
+    }
 }

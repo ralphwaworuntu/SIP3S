@@ -114,6 +114,88 @@ export const mockTasks = [
         updatedAt: new Date().toISOString(),
     },
 ];
+export const mockRecipientVerifications = [
+    {
+        id: "rv-001",
+        nik: "5301166304730002",
+        nama: "Aksafina Kenlopo",
+        kelompok: "Suka Maju",
+        komoditas: "Jagung",
+        wilayah: "Kelurahan Oelomin",
+        jadwalDistribusi: "2025-01-08",
+        status: "pending",
+    },
+    {
+        id: "rv-002",
+        nik: "5301162208770002",
+        nama: "Alfons Yakob Absalom Takesan",
+        kelompok: "Suka Maju",
+        komoditas: "Jagung",
+        wilayah: "Kelurahan Oelomin",
+        jadwalDistribusi: "2025-01-08",
+        status: "pending",
+    },
+    {
+        id: "rv-003",
+        nik: "5301161404830001",
+        nama: "Aprison Aminadap Jabi",
+        kelompok: "Suka Maju",
+        komoditas: "Jagung",
+        wilayah: "Kelurahan Tesbatan",
+        jadwalDistribusi: "2025-01-09",
+        status: "verified",
+        verifiedAt: "2025-01-09T15:20:00+08:00",
+        notes: "Sudah menerima 75kg Urea dan 90kg NPK.",
+    },
+];
+export const mockPlantProgress = [
+    {
+        id: "pc-001",
+        wilayah: "Kelurahan Oelomin",
+        petani: "Aksafina Kenlopo",
+        komoditas: "Jagung",
+        fase: "vegetatif",
+        kondisi: "baik",
+        catatan: "Pertumbuhan merata, serangan hama rendah.",
+        updatedAt: "2025-01-12T09:00:00+08:00",
+    },
+    {
+        id: "pc-002",
+        wilayah: "Kelurahan Tesbatan",
+        petani: "Daud Takesan",
+        komoditas: "Jagung",
+        fase: "generatif",
+        kondisi: "waspada",
+        catatan: "Ditemukan ulat grayak di beberapa petak, koordinasi dengan PPL untuk pengendalian.",
+        updatedAt: "2025-01-13T08:45:00+08:00",
+    },
+];
+export const mockHarvestVerifications = [
+    {
+        id: "hv-001",
+        petani: "Yeheskiel Abnetego Kenlopo",
+        komoditas: "Jagung",
+        luasPanenHa: 1,
+        produksiTon: 2.4,
+        lokasi: "Kelurahan Oelomin",
+        diverifikasiAt: "2025-03-05T10:00:00+08:00",
+        keterangan: "Butuh bantuan pengeringan di RPK Anugerah.",
+    },
+];
+export const mockEscortRequests = [
+    {
+        id: "er-001",
+        wilayah: "Kelurahan Oelomin",
+        jadwal: "2025-03-06T07:30:00+08:00",
+        titikKumpul: "Balai Desa Oelomin",
+        estimasiPeserta: 48,
+        kebutuhanPersonel: 6,
+        status: "baru",
+        catatan: "Permintaan kawalan saat pengangkutan hasil panen ke Gudang Bulog Penfui.",
+        diajukanOleh: "bhabin@polda.ntt.gov.id",
+        diajukanAt: "2025-03-04T16:40:00+08:00",
+    },
+];
 export const mockReports = [
     {
         id: "r-001",

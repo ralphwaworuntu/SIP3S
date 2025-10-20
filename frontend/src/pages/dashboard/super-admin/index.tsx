@@ -393,9 +393,7 @@ const SuperAdminDashboard = () => {
       </section>
 
       <section>
-
-        {/* <SuperAdminManagementPanel /> */}
-
+        <SuperAdminManagementPanel />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">

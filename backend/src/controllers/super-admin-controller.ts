@@ -2,6 +2,7 @@ import Joi from "joi";
 import type { Request, Response } from "express";
 
 import { SuperAdminService } from "@/services/super-admin-service";
+import type { RecipientVerificationPayload } from "@/types/bhabin";
 import type { TaskPriority, TaskStatus } from "@/types/task";
 
 const service = new SuperAdminService();

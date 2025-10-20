@@ -185,4 +185,3 @@ export class SuperAdminService {
     await this.bhabinAccountService.deleteAccount(id);
   }
 }
-
